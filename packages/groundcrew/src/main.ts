@@ -1,0 +1,40 @@
+/**
+ * The entry point of the `jq-groundcrew` package.
+ *
+ * build.sh bundles this file and its imports into one file with no
+ * dependency. It checks the folder it is run in. It has no --sync: this build holds no database
+ * client and makes no network call of any kind. A test (groundcrew-public.test.ts) fails if the
+ * bundle's source graph reaches a network or database module.
+ */
+import { DEFAULT_PORT, parseArgs, runLocal } from './groundcrew-cli.js'
+
+declare const __GROUNDCREW_VERSION__: string
+const VERSION = typeof __GROUNDCREW_VERSION__ === 'string' ? __GROUNDCREW_VERSION__ : 'dev'
+
+const HELP = `JQ Groundcrew ${VERSION}: the setup check for Claude Code.
+
+It reads how Claude Code is set up for a project and shows what to fix, with a prompt to copy
+for each fix. It runs on your machine and sends nothing anywhere.
+
+  jq-groundcrew [folder]               open a page at http://127.0.0.1:${DEFAULT_PORT}
+  jq-groundcrew [folder] --html FILE   write the page to a file
+  jq-groundcrew [folder] --json        print the report
+  jq-groundcrew --port NUMBER          serve on another port
+  jq-groundcrew --json --fail-on fail  exit 1 if a check fails, for CI
+                                       (--fail-on warn also counts a warning)
+
+The folder defaults to the one you are in. It reads settings files, counts lines in CLAUDE.md
+files, and lists the names of skills, subagents, MCP servers and files that usually hold
+secrets. It never opens a secrets file and never reads a session transcript.
+
+Unofficial. Not affiliated with or endorsed by Anthropic.`
+
+try {
+  const args = process.argv.slice(2)
+  if (args.includes('--help') || args.includes('-h')) console.log(HELP)
+  else if (args.includes('--version') || args.includes('-v')) console.log(VERSION)
+  else process.exitCode = runLocal(parseArgs(args, process.cwd()))
+} catch (error: any) {
+  console.error(error.message || error)
+  process.exit(1)
+}

@@ -1,0 +1,26 @@
+{
+  "name": "jq-groundcrew",
+  "version": "0.1.1",
+  "description": "The setup check for Claude Code: what loads into every session, what runs automatically, and which guardrails are on. Runs on your machine and sends nothing anywhere. Unofficial; not affiliated with or endorsed by Anthropic.",
+  "bin": { "jq-groundcrew": "dist/groundcrew.mjs" },
+  "type": "module",
+  "files": ["dist/groundcrew.mjs", "README.md", "LICENSE", "NOTICE"],
+  "engines": { "node": ">=18" },
+  "keywords": ["claude-code", "developer-tools", "ai-coding", "setup", "guardrails"],
+  "author": "Point Seven Studio",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/point-seven-studio/jq-tools.git", "directory": "packages/groundcrew" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "./build.sh",
+    "check": "npm run typecheck && npm test && ./build.sh --check",
+    "prepublishOnly": "npm run check"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

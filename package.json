@@ -1,0 +1,12 @@
+{
+  "name": "jq-tools",
+  "private": true,
+  "description": "Open tools for teams that work with coding agents. By Point Seven Studio.",
+  "license": "Apache-2.0",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run check --workspaces --if-present"
+  }
+}
