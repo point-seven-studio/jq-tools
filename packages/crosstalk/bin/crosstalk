@@ -1,0 +1,365 @@
+#!/bin/bash
+# crosstalk: a file mailbox for agent sessions that work side by side.
+#
+# Each session has a name and an inbox folder. A message is a markdown file with a
+# small header. Sessions send each other briefs and questions, acknowledge what they
+# have handled, and can post a question to a shared board for anyone to answer.
+#
+#   crosstalk init <dir> <name> [<name> ...]     create a mailbox
+#   crosstalk send <to> "<subject>" [--kind brief|question|notice] [--re <path>] [-f bodyfile]
+#   crosstalk reply <path> [-f bodyfile]          to the sender, "Re: <subject>", same thread
+#   crosstalk inbox [<name>]                      list unread mail
+#   crosstalk read <path>
+#   crosstalk ack <path>                          mark handled (moves it to the archive)
+#
+# The board (a question or comment for ANYONE; it wakes no session):
+#   crosstalk post "<title>" --tags a,b [--expires YYYY-MM-DD] [-f bodyfile]
+#   crosstalk board [--all]                       open posts matching your tags
+#   crosstalk reply <post> --evidence verified|assumed [-f bodyfile]
+#   crosstalk close <post> --settled-by source|owner|fix|pushback|nobody [-f bodyfile]
+#
+#   crosstalk view [--html FILE | --json]         a local page: waiting, threads, board
+#
+# The body comes from -f, or from stdin.
+#
+# Who you are:   --from <name>, or $CROSSTALK_SELF (set it once per session).
+# Which mailbox: $CROSSTALK_DIR, or the nearest folder above you holding a .crosstalk file.
+set -euo pipefail
+
+# Follow symlinks to the real script, so `view` finds its bundle when installed by npm.
+SELF_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SELF_PATH" ]; do
+  LINK_DIR="$(cd "$(dirname "$SELF_PATH")" && pwd)"
+  SELF_PATH="$(readlink "$SELF_PATH")"
+  case "$SELF_PATH" in /*) ;; *) SELF_PATH="$LINK_DIR/$SELF_PATH" ;; esac
+done
+PKG="$(cd "$(dirname "$SELF_PATH")/.." && pwd)"
+
+BOARD="board"
+
+usage() {
+  sed -n '2,25p' "$SELF_PATH" | sed 's/^# \{0,1\}//'
+}
+
+# ── init ──────────────────────────────────────────────────────────────
+if [ "${1:-}" = "init" ]; then
+  DIR="${2:?init needs a folder}"
+  shift 2
+  [ $# -ge 2 ] || { echo "init needs at least two names (who will talk?)" >&2; exit 1; }
+  [ ! -e "$DIR/.crosstalk" ] || { echo "$DIR is already a mailbox" >&2; exit 1; }
+  for n in "$@"; do
+    echo "$n" | grep -qE '^[a-z0-9][a-z0-9-]*$' || { echo "bad name: $n (lowercase letters, digits and dashes)" >&2; exit 1; }
+    [ "$n" != "$BOARD" ] || { echo "'$BOARD' is reserved" >&2; exit 1; }
+  done
+  for n in "$@" "$BOARD"; do mkdir -p "$DIR/inbox/$n" "$DIR/archive/$n"; done
+  mkdir -p "$DIR/registry"
+  {
+    echo "# Who should see which board posts. One line per name: \`name: tag, tag\`."
+    echo "# \`crosstalk board\` lists open posts sharing a tag with your line; the rest are a count."
+    for n in "$@"; do echo "$n: "; done
+  } > "$DIR/registry/expertise.txt"
+  echo "crosstalk mailbox, created $(date -u +%Y-%m-%d)" > "$DIR/.crosstalk"
+  echo "created a mailbox at $DIR for: $*"
+  echo "next: export CROSSTALK_DIR=\"$(cd "$DIR" && pwd)\" and CROSSTALK_SELF=<your name> in each session"
+  exit 0
+fi
+
+case "${1:-}" in
+  ""|-h|--help|help) usage; exit 0 ;;
+esac
+
+# ── which mailbox ─────────────────────────────────────────────────────
+ROOT="${CROSSTALK_DIR:-}"
+if [ -z "$ROOT" ]; then
+  D="$PWD"
+  while [ "$D" != "/" ]; do
+    if [ -f "$D/.crosstalk" ]; then ROOT="$D"; break; fi
+    D="$(dirname "$D")"
+  done
+fi
+[ -n "$ROOT" ] && [ -d "$ROOT/inbox" ] || { echo "no mailbox found: set \$CROSSTALK_DIR, or run 'crosstalk init <dir> <names>'" >&2; exit 1; }
+ROOT="$(cd "$ROOT" && pwd)"
+EXPERTISE="$ROOT/registry/expertise.txt"
+
+# ── the after-hook ────────────────────────────────────────────────────
+# If the mailbox has an executable hooks/after, it runs after every send, ack and
+# close: the place to copy the mailbox somewhere else (a database, a dashboard).
+#
+# It runs detached, so a send never waits on it. A detached process cannot report
+# its exit code to the command that started it, so the code is written to a status
+# file and reported by the NEXT crosstalk command. A hook whose failures go nowhere
+# can be dead for weeks before anyone notices; one command late is the fix for that.
+HOOK="$ROOT/hooks/after"
+HOOK_LOG="$ROOT/.crosstalk-hook.log"
+HOOK_STATUS="$ROOT/.crosstalk-hook.status"
+HOOK_LOCK="$ROOT/.crosstalk-hook.lock"
+
+after() {
+  [ -x "$HOOK" ] || return 0
+  if [ -f "$HOOK_STATUS" ] && [ "$(cat "$HOOK_STATUS" 2>/dev/null || echo 0)" != "0" ]; then
+    echo "crosstalk: the previous hooks/after run FAILED (exit $(cat "$HOOK_STATUS"))." >&2
+    echo "crosstalk:    $(tail -1 "$HOOK_LOG" 2>/dev/null)" >&2
+    echo "crosstalk:    full output: $HOOK_LOG" >&2
+  fi
+  (
+    # One run at a time. `mkdir` is the lock because it is atomic and needs no flock,
+    # which macOS does not ship. Losing the race means a run is already under way, so
+    # exit without touching the status file: a run that never happened reports nothing.
+    if ! mkdir "$HOOK_LOCK" 2>/dev/null; then
+      # A lock older than 10 minutes is a crashed run. Without this, one killed
+      # process stops the hook for good, silently.
+      if [ -d "$HOOK_LOCK" ] && [ -n "$(find "$HOOK_LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
+        echo "crosstalk: clearing a stale hook lock (older than 10 minutes)" >&2
+        rmdir "$HOOK_LOCK" 2>/dev/null
+        mkdir "$HOOK_LOCK" 2>/dev/null || exit 0
+      else
+        exit 0
+      fi
+    fi
+    trap 'rmdir "$HOOK_LOCK" 2>/dev/null' EXIT
+    # Write to .partial and move it into place when the run ends, so the log always
+    # holds a COMPLETE previous run and never a half-written one.
+    # if/else, not `cmd; rc=$?`: `set -e` would end the subshell before the code was saved.
+    if CROSSTALK_DIR="$ROOT" "$HOOK" >"$HOOK_LOG.partial" 2>&1; then
+      rc=0
+    else
+      rc=$?
+    fi
+    mv -f "$HOOK_LOG.partial" "$HOOK_LOG"
+    echo "$rc" >"$HOOK_STATUS"
+  ) &
+}
+
+# ── helpers ───────────────────────────────────────────────────────────
+# One header value from a message file ("" when absent). Reads only the header
+# block, so a body line that happens to start "thread:" is never picked up.
+fm() {
+  awk -v k="$2" 'NR==1 && $0!="---" {exit} NR>1 && $0=="---" {exit} index($0, k": ")==1 {print substr($0, length(k)+3); exit}' "$1"
+}
+
+# A name's tags from registry/expertise.txt (`name: tag, tag`), one per line.
+tags_of() {
+  [ -f "$EXPERTISE" ] || return 0
+  awk -v p="$1" -F': *' '$1==p {gsub(/ /,"",$2); n=split($2,t,","); for(i=1;i<=n;i++) if(t[i]!="") print t[i]}' "$EXPERTISE"
+}
+
+# Open board posts. With a name, only posts sharing a tag with it (or asked by it)
+# are listed and the rest are a count; with "" every open post is listed.
+board_list() {
+  local me="$1" mine f tags thread n shown=0 other=0 today hit t exp late
+  today=$(date -u +%Y-%m-%d)
+  mine=$(tags_of "$me")
+  for f in "$ROOT/inbox/$BOARD"/*.md; do
+    [ -f "$f" ] || continue
+    [ "$(fm "$f" kind)" = "post" ] || continue
+    tags=$(fm "$f" tags)
+    if [ -n "$me" ] && [ -n "$mine" ]; then
+      hit=0
+      for t in $(echo "$tags" | tr ',' ' '); do
+        if echo "$mine" | grep -qxF -- "$t"; then hit=1; fi
+      done
+      if [ "$hit" != 1 ] && [ "$(fm "$f" from)" != "$me" ]; then other=$((other+1)); continue; fi
+    fi
+    thread=$(fm "$f" thread)
+    n=$(grep -lxF -- "thread: $thread" "$ROOT/inbox/$BOARD"/*.md 2>/dev/null | wc -l | tr -d ' ')
+    exp=$(fm "$f" expires); late=""
+    if [ -n "$exp" ] && [ "$exp" \< "$today" ]; then late=" EXPIRED"; fi
+    echo "$(fm "$f" subject)"
+    echo "    from $(fm "$f" from) · tags: ${tags:-none} · $((n-1)) replies · expires ${exp:-never}$late"
+    echo "    $f"
+    shown=$((shown+1))
+  done
+  if [ "$shown" -eq 0 ]; then
+    if [ -n "$me" ]; then echo "no open board posts match the tags of $me"; else echo "no open board posts"; fi
+  fi
+  if [ "$other" -gt 0 ]; then echo "($other other open, outside your tags: crosstalk board --all)"; fi
+}
+
+# ── commands that are `send` in disguise ──────────────────────────────
+if [ "${1:-}" = "post" ]; then
+  shift
+  set -- send "$BOARD" "$@" --kind post
+fi
+
+# Only the asker closes: nobody else can say the question is answered.
+if [ "${1:-}" = "close" ]; then
+  ORIG="${2:?path to the board post you are closing}"
+  [ -f "$ORIG" ] || { echo "no such post: $ORIG" >&2; exit 1; }
+  [ "$(fm "$ORIG" kind)" = "post" ] || { echo "close: $ORIG is not a board post" >&2; exit 1; }
+  shift 2
+  C_SUBJECT="Closed: $(fm "$ORIG" subject)"
+  set -- send "$BOARD" "$C_SUBJECT" --re "$ORIG" --kind close "$@"
+fi
+
+if [ "${1:-}" = "reply" ]; then
+  ORIG="${2:?path to the message you are answering}"
+  [ -f "$ORIG" ] || { echo "no such message: $ORIG" >&2; exit 1; }
+  R_TO=$(fm "$ORIG" from)
+  [ -n "$R_TO" ] || { echo "cannot reply: $ORIG has no from: line" >&2; exit 1; }
+  # A reply on the board stays on the board, where everyone can read it.
+  if [ "$(fm "$ORIG" to)" = "$BOARD" ]; then R_TO="$BOARD"; fi
+  R_SUBJECT=$(fm "$ORIG" subject)
+  case "$R_SUBJECT" in [Rr][Ee]:*) ;; *) R_SUBJECT="Re: $R_SUBJECT" ;; esac
+  shift 2
+  set -- send "$R_TO" "$R_SUBJECT" --re "$ORIG" "$@"
+fi
+
+case "${1:-}" in
+  send)
+    shift
+    FROM_ARG=""; BODYFILE=""; TO=""; SUBJECT=""; KIND="brief"; RE=""
+    TAGS=""; EXPIRES=""; EVIDENCE=""; SETTLED=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --from=*) FROM_ARG="${1#--from=}"; shift ;;
+        --from)   FROM_ARG="${2:?--from needs a value}"; shift 2 ;;
+        -f)       BODYFILE="${2:?-f needs a bodyfile}"; shift 2 ;;
+        --kind=*) KIND="${1#--kind=}"; shift ;;
+        --kind)   KIND="${2:?--kind needs a value}"; shift 2 ;;
+        --re)     RE="${2:?--re needs the path of the message answered}"; shift 2 ;;
+        --tags)       TAGS=$(echo "${2:?--tags needs a,b,c}" | tr '[:upper:]' '[:lower:]' | tr -d ' '); shift 2 ;;
+        --expires)    EXPIRES="${2:?--expires needs YYYY-MM-DD}"; shift 2 ;;
+        --evidence)   EVIDENCE="${2:?--evidence needs verified or assumed}"; shift 2 ;;
+        --settled-by) SETTLED="${2:?--settled-by needs a value}"; shift 2 ;;
+        *)
+          if [ -z "$TO" ]; then TO="$1"
+          elif [ -z "$SUBJECT" ]; then SUBJECT="$1"
+          else echo "unexpected argument: $1" >&2; exit 1
+          fi
+          shift ;;
+      esac
+    done
+    [ -n "$TO" ] || { echo "recipient required (a folder under inbox/)" >&2; exit 1; }
+    [ -n "$SUBJECT" ] || { echo "subject required" >&2; exit 1; }
+    [ -d "$ROOT/inbox/$TO" ] || { echo "unknown recipient: $TO (no inbox/$TO/)" >&2; exit 1; }
+    [ -z "$RE" ] || [ -f "$RE" ] || { echo "--re: no such message: $RE" >&2; exit 1; }
+
+    # The sender is never guessed. A guess that is right for two sessions is wrong
+    # for the third, and a mis-stamped message reads as someone else speaking.
+    FROM="${FROM_ARG:-${CROSSTALK_SELF:-}}"
+    [ -n "$FROM" ] || { echo "who is sending? use --from <name> or set \$CROSSTALK_SELF" >&2; exit 1; }
+    [ -d "$ROOT/inbox/$FROM" ] || { echo "unknown sender: $FROM (no inbox/$FROM/)" >&2; exit 1; }
+    [ "$FROM" != "$BOARD" ] || { echo "'$BOARD' cannot send" >&2; exit 1; }
+    [ "$FROM" != "$TO" ] || { echo "sender ($FROM) cannot equal recipient ($TO)" >&2; exit 1; }
+
+    case "$KIND" in
+      brief|question|notice) ;;
+      post|close) [ "$TO" = "$BOARD" ] || { echo "kind $KIND is only for the board" >&2; exit 1; } ;;
+      *) echo "unknown kind: $KIND (brief, question or notice)" >&2; exit 1 ;;
+    esac
+    if [ "$TO" = "$BOARD" ]; then
+      case "$KIND" in
+        post)
+          [ -n "$TAGS" ] || { echo "post needs --tags (who should see it?)" >&2; exit 1; }
+          [ "${#SUBJECT}" -le 120 ] || { echo "post title is ${#SUBJECT} characters; keep it to 120" >&2; exit 1; }
+          # Seven days by default. BSD date first (macOS), then GNU.
+          [ -n "$EXPIRES" ] || EXPIRES=$(date -u -v+7d +%Y-%m-%d 2>/dev/null || date -u -d '+7 days' +%Y-%m-%d)
+          echo "$EXPIRES" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || { echo "--expires must be YYYY-MM-DD" >&2; exit 1; }
+          ;;
+        close)
+          case "$SETTLED" in
+            source|owner|fix|pushback|nobody) ;;
+            *) echo "close needs --settled-by source|owner|fix|pushback|nobody" >&2; exit 1 ;;
+          esac
+          ASKER=$(fm "$RE" from)
+          [ "$FROM" = "$ASKER" ] || { echo "only the asker, $ASKER, closes this post" >&2; exit 1; }
+          ;;
+        *)
+          [ -n "$RE" ] || { echo "the board takes posts and replies: use 'crosstalk post' or 'crosstalk reply <post>'" >&2; exit 1; }
+          # Did you check, or are you recalling? A reader cannot tell otherwise.
+          case "$EVIDENCE" in
+            verified|assumed) ;;
+            *) echo "a board reply needs --evidence verified|assumed" >&2; exit 1 ;;
+          esac
+          ;;
+      esac
+    fi
+
+    if [ -n "$BODYFILE" ]; then BODY=$(cat "$BODYFILE"); else BODY=$(cat); fi
+    SLUG=$(echo "$SUBJECT" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed -e 's/^-//' -e 's/-$//' | cut -c1-40)
+    STAMP=$(date -u +%Y%m%d-%H%M%S)
+    # The recipient is in the filename because filenames must be unique ACROSS
+    # inboxes: the same subject sent to several names in one second would otherwise
+    # make identical filenames, and anything that copies the mailbox by filename breaks.
+    FILE="$ROOT/inbox/$TO/$STAMP-$TO-$SLUG.md"
+    # A thread is named after its first message: that file's name without .md. The
+    # bare timestamp is not enough, because two messages sent in the same second
+    # would share it. A reply copies the thread of the message it answers.
+    THREAD="$STAMP-$TO-$SLUG"; REPLY_TO=""
+    if [ -n "$RE" ]; then
+      REPLY_TO=$(basename "$RE")
+      THREAD=$(fm "$RE" thread)
+      [ -n "$THREAD" ] || THREAD="${REPLY_TO%.md}"
+    fi
+    NEEDS="yes"
+    if [ "$KIND" = "notice" ] || [ "$KIND" = "close" ]; then NEEDS="no"; fi
+    {
+      echo "---"
+      echo "from: $FROM"
+      # `to:` is in the header so a message carries its addressee inside the text.
+      # A message quoted or forwarded without it leaves "your" as the only clue to
+      # who it was written for, and a reader takes "your" to mean them.
+      echo "to: $TO"
+      echo "subject: $SUBJECT"
+      echo "sent: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      echo "kind: $KIND"
+      echo "thread: $THREAD"
+      [ -z "$REPLY_TO" ] || echo "reply_to: $REPLY_TO"
+      [ -z "$TAGS" ] || echo "tags: $TAGS"
+      [ -z "$EXPIRES" ] || echo "expires: $EXPIRES"
+      [ -z "$EVIDENCE" ] || echo "evidence: $EVIDENCE"
+      [ -z "$SETTLED" ] || echo "settled_by: $SETTLED"
+      echo "needs_response: $NEEDS"
+      echo "---"
+      echo ""
+      echo "$BODY"
+    } > "$FILE"
+    echo "$FILE"
+    if [ "$KIND" = "close" ]; then
+      # Closing archives the whole thread, the closing message included, so the open
+      # board holds only what still wants an answer.
+      for f in "$ROOT/inbox/$BOARD"/*.md; do
+        [ -f "$f" ] || continue
+        if [ "$(fm "$f" thread)" = "$THREAD" ]; then mv "$f" "$ROOT/archive/$BOARD/"; fi
+      done
+      echo "closed → archive/$BOARD/ (thread $THREAD, settled by $SETTLED)"
+    fi
+    after
+    ;;
+  board)
+    if [ "${2:-}" = "--all" ]; then board_list ""; else board_list "${CROSSTALK_SELF:-}"; fi
+    ;;
+  inbox)
+    TO="${2:-${CROSSTALK_SELF:-}}"
+    [ -n "$TO" ] || { echo "whose inbox? give a name or set \$CROSSTALK_SELF" >&2; exit 1; }
+    ls -1 "$ROOT/inbox/$TO/" 2>/dev/null || true
+    # One line about the board, on stderr so scripts that read the listing are
+    # unaffected. This is how a session hears about the board without being woken.
+    if [ "$TO" != "$BOARD" ]; then
+      OPEN=$(board_list "$TO" | grep -c '^    from ' || true)
+      if [ "$OPEN" -gt 0 ]; then echo "board: $OPEN open post(s) for $TO. Run: crosstalk board" >&2; fi
+    fi
+    ;;
+  read)
+    cat "${2:?path required}"
+    ;;
+  ack)
+    F="${2:?path required}"
+    [ -f "$F" ] || { echo "no such message: $F" >&2; exit 1; }
+    REC=$(basename "$(dirname "$F")")
+    [ "$REC" != "$BOARD" ] || { echo "board posts are closed by their asker (crosstalk close), not acked" >&2; exit 1; }
+    [ -d "$ROOT/archive/$REC" ] || { echo "$F is not in an inbox of this mailbox" >&2; exit 1; }
+    mv "$F" "$ROOT/archive/$REC/"
+    echo "acked → archive/$REC/$(basename "$F")"
+    after
+    ;;
+  view)
+    shift
+    [ -f "$PKG/dist/view.mjs" ] || { echo "the viewer is not built (run: npm run build)" >&2; exit 1; }
+    exec node "$PKG/dist/view.mjs" "$ROOT" "$@"
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac
