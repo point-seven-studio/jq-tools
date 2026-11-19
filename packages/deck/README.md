@@ -66,7 +66,8 @@ npx @point-seven-studio/jq-deck --watch --repos shop,api --exec "jq-deck-server 
 Every interval (60 seconds, or `--interval`), your command receives one JSON report on stdin. [jq-deck-server](../deck-server) is a server that takes them; any command works.
 
 - **You list what is reported.** `--repos` (or `report` in the config file) names the repositories, by folder name, remote or path. Nothing else is in the report, not even as a count. `--all-repos` reports every one. With neither, `--watch` refuses to start.
-- **A report is counts and scores:** per repository its name, git remote, session counts, how long the longest-waiting session has waited, the setup score and the unread count. No folder path, no question text (whatever `--questions` says), no message, no file name.
+- **A report is counts and scores:** per repository its name, git remote, session counts, how long the longest-waiting session has waited, the setup score and the unread count. No folder path, no message, no file name.
+- **Question text is not sent unless you opt a folder in:** `--send-questions ~/code/shop` (or `sendQuestions` in the config file) adds what each waiting session under that folder asked. `--questions` is about your own screen and sends nothing. The repository must also be one you report. The relay says at start whether question text is being sent.
 - If the command fails, jq-deck says so each time.
 
 ## As a library

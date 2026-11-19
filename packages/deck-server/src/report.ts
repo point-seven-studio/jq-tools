@@ -17,6 +17,11 @@ export interface RepoReport {
   setup: { score: number; fail: number; warn: number } | null
   /** null when the machine has no inbox for this repository: unknown, never zero. */
   unread: number | null
+  /**
+   * What each waiting session asked. Present only when the machine opted that
+   * folder in to sending it. The one free-text field in a report.
+   */
+  questions?: { asked_at: string | null; text: string }[]
 }
 
 export interface TeamReport {
@@ -27,6 +32,8 @@ export interface TeamReport {
 
 export const MAX_REPOS = 200
 export const MAX_BODY_BYTES = 256 * 1024
+export const MAX_QUESTIONS = 20
+export const MAX_QUESTION_CHARS = 400
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
@@ -54,6 +61,21 @@ function remote(v: unknown): string | null {
   return typeof v === 'string' && v.length <= 200 && /^[a-z0-9][a-z0-9.-]*(\/[A-Za-z0-9._~-]+)+$/.test(v) ? v : null
 }
 
+/**
+ * Question text is a session's own words, so it is cut to length, stripped of
+ * control characters, and shown only as text. Never trusted, never run.
+ */
+function questions(v: unknown): RepoReport['questions'] {
+  if (v === undefined || v === null) return undefined
+  if (!Array.isArray(v) || v.length > MAX_QUESTIONS) throw new Error(`questions must be a list of at most ${MAX_QUESTIONS}`)
+  const out = v.map((q) => {
+    if (!isObj(q) || typeof q.text !== 'string') throw new Error('each question needs its text')
+    const text = q.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, MAX_QUESTION_CHARS)
+    return { asked_at: isoOrNull(q.asked_at, 'questions.asked_at'), text }
+  }).filter((q) => q.text)
+  return out.length ? out : undefined
+}
+
 /** Throws with a plain reason when the value is not a report. Returns only the fields above. */
 export function sanitizeReport(value: unknown): TeamReport {
   if (!isObj(value)) throw new Error('the report must be a JSON object')
@@ -65,6 +87,7 @@ export function sanitizeReport(value: unknown): TeamReport {
   const repos = value.repos.map((r): RepoReport => {
     if (!isObj(r)) throw new Error('each repository must be an object')
     const setup = isObj(r.setup) ? { score: count(r.setup.score, 'setup.score', 100), fail: count(r.setup.fail, 'setup.fail'), warn: count(r.setup.warn, 'setup.warn') } : null
+    const asked = questions(r.questions)
     return {
       name: repoName(r.name),
       remote: remote(r.remote),
@@ -76,6 +99,7 @@ export function sanitizeReport(value: unknown): TeamReport {
       last_activity_at: isoOrNull(r.last_activity_at, 'last_activity_at'),
       setup,
       unread: r.unread === null || r.unread === undefined ? null : count(r.unread, 'unread'),
+      ...(asked ? { questions: asked } : {}),
     }
   })
   return { v: 1, generated_at: generated, repos }

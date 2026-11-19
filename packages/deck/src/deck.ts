@@ -23,6 +23,8 @@ export interface DeckConfig {
   questions?: string[]
   /** The repositories --watch may report to a team board: names, remotes or folders. */
   report?: string[]
+  /** Folders whose waiting sessions may send their question text to a team board. */
+  sendQuestions?: string[]
 }
 
 export const expandHome = (p: string) => (p === '~' || p.startsWith('~/') ? path.join(os.homedir(), p.slice(1)) : p)
@@ -49,6 +51,7 @@ export function loadConfig(file: string): DeckConfig {
     for (const [k, v] of Object.entries(r.names as Record<string, unknown>)) if (typeof v === 'string') out.names[k] = path.resolve(expandHome(v))
   }
   if (Array.isArray(r.report)) out.report = r.report.filter((q): q is string => typeof q === 'string')
+  if (Array.isArray(r.sendQuestions)) out.sendQuestions = r.sendQuestions.filter((q): q is string => typeof q === 'string').map(expandHome)
   if (Array.isArray(r.questions)) out.questions = r.questions.filter((q): q is string => typeof q === 'string').map(expandHome)
   return out
 }
@@ -102,6 +105,11 @@ export interface RepoRow {
   last_activity_at: string | null
   /** When the longest-waiting session that needs a person last did anything. */
   waiting_since: string | null
+  /**
+   * What each session that needs a person asked, longest-waiting first. Only
+   * for folders where question text is allowed; empty everywhere else.
+   */
+  questions: { asked_at: string | null; text: string }[]
   /** The origin remote as host/owner/name, when the folder has one. Names the same repository on two machines. */
   remote: string | null
   /** null when the setup check could not run; `setup_note` says why. */
@@ -181,6 +189,10 @@ export function buildOverview(input: {
       abandoned: attention.filter((a) => a === 'abandoned').length,
       last_activity_at: rows.map((r) => r.last_activity_at || '').sort().pop() || null,
       waiting_since: rows.filter((_, i) => attention[i] === 'needs-you').map((r) => r.last_activity_at || '').filter(Boolean).sort()[0] ?? null,
+      questions: rows
+        .filter((r, i) => attention[i] === 'needs-you' && r.question_allowed && !!r.blocked_question)
+        .map((r) => ({ asked_at: r.last_activity_at, text: r.blocked_question as string }))
+        .sort((a, b) => (a.asked_at || '').localeCompare(b.asked_at || '')),
       remote: input.remotes?.get(tree) ?? null,
       setup: setup && 'summary' in setup ? { score: setup.summary.score, fail: setup.summary.fail, warn: setup.summary.warn } : null,
       setup_note: setup && 'error' in setup ? setup.error : setup ? null : 'not checked',
@@ -257,7 +269,17 @@ export interface TeamReport {
     last_activity_at: string | null
     setup: { score: number; fail: number; warn: number } | null
     unread: number | null
+    /** Present only for a repository whose folder opted in to sending question text. */
+    questions?: { asked_at: string | null; text: string }[]
   }[]
+}
+
+/** Is `tree` one of these folders, or inside one? */
+export function under(tree: string, folders: string[]): boolean {
+  return folders.some((f) => {
+    const folder = path.resolve(expandHome(f))
+    return tree === folder || tree.startsWith(folder + path.sep)
+  })
 }
 
 /** Is this repository on the list? An entry is a folder name, a remote (host/owner/name) or a folder path. */
@@ -273,8 +295,12 @@ export function reportable(r: Pick<RepoRow, 'name' | 'remote' | 'tree'>, only: s
 /**
  * `only` is the list of repositories this machine agreed to report. With a
  * list, nothing else is in the report, not even as a count. null reports all.
+ *
+ * `sendQuestions` is the list of folders that agreed to send what a waiting
+ * session asked. It defaults to none, whatever the overview holds: showing a
+ * question on your own screen is not agreeing to send it.
  */
-export function teamReport(o: Overview, only: string[] | null = null): TeamReport {
+export function teamReport(o: Overview, only: string[] | null = null, sendQuestions: string[] = []): TeamReport {
   return {
     v: 1,
     generated_at: o.generated_at,
@@ -289,6 +315,7 @@ export function teamReport(o: Overview, only: string[] | null = null): TeamRepor
       last_activity_at: r.last_activity_at,
       setup: r.setup,
       unread: r.unread,
+      ...(r.questions.length > 0 && under(r.tree, sendQuestions) ? { questions: r.questions } : {}),
     })),
   }
 }

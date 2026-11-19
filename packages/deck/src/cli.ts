@@ -29,6 +29,8 @@ export interface Args {
   /** Repositories --watch may report. null: not said on the command line. */
   repos: string[] | null
   allRepos: boolean
+  /** Folders whose question text --watch may send. null: not said on the command line. */
+  sendQuestions: string[] | null
   port: number
   mailbox: string | null
   config: string
@@ -48,6 +50,7 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     intervalS: Number(env.JQ_DECK_INTERVAL_S) || 60,
     repos: null,
     allRepos: false,
+    sendQuestions: null,
     port: DEFAULT_PORT,
     mailbox: null,
     config: env.JQ_DECK_CONFIG || defaultConfigFile(),
@@ -68,6 +71,7 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     else if (f === '--exec') a.exec = value(i++, f)
     else if (f === '--repos') a.repos = list(value(i++, f))
     else if (f === '--all-repos') a.allRepos = true
+    else if (f === '--send-questions') a.sendQuestions = list(value(i++, f))
     else if (f === '--interval') a.intervalS = Number(value(i++, f))
     else if (f === '--probe') a.probe = true
     else if (f === '--no-sample') a.sample = false
@@ -83,7 +87,7 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
   if (!(a.intervalS >= 15)) throw new Error('--interval needs 15 seconds or more')
   if (a.watch && !a.exec) throw new Error('--watch needs --exec CMD (what should receive each report?)')
   if (a.exec && !a.watch) throw new Error('--exec goes with --watch')
-  if ((a.repos || a.allRepos) && !a.watch) throw new Error('--repos and --all-repos go with --watch')
+  if ((a.repos || a.allRepos || a.sendQuestions) && !a.watch) throw new Error('--repos, --all-repos and --send-questions go with --watch')
   if (a.repos && a.allRepos) throw new Error('pass --repos or --all-repos, not both')
   return a
 }
@@ -96,6 +100,8 @@ export interface Context {
   sample: boolean
   /** What --watch may report: a list, or null for every repository. */
   report: string[] | null
+  /** Folders whose question text --watch may send. Empty unless asked for. */
+  sendQuestions: string[]
 }
 
 /**
@@ -119,6 +125,7 @@ export function buildContext(a: Args, env: Record<string, string | undefined>, c
     probe: a.probe,
     sample: a.sample,
     report: a.watch ? reportList(a, config.report) : null,
+    sendQuestions: a.watch ? (a.sendQuestions ?? config.sendQuestions ?? []).map((t) => path.resolve(expandHome(t))) : [],
     deck: {
       mailbox: findMailbox({ flag: a.mailbox, config: config.mailbox, env: env.CROSSTALK_DIR, cwd }),
       names: config.names,
@@ -187,10 +194,11 @@ export async function run(argv: string[], version: string): Promise<void> {
   const a = parseArgs(argv, process.env)
   const ctx = buildContext(a, process.env, process.cwd(), version)
   if (a.watch) {
-    // Question text is never part of a report, whatever --questions says.
+    // --questions is about this machine's own screen and plays no part here.
+    // Question text is read, and sent, only for the folders in --send-questions.
     const tick = async () => {
       try {
-        const report = teamReport(await collectOverview({ ...ctx.deck, questionTrees: [] }), ctx.report)
+        const report = teamReport(await collectOverview({ ...ctx.deck, questionTrees: ctx.sendQuestions }), ctx.report, ctx.sendQuestions)
         const code = await hand(a.exec as string, report)
         const line = `jq-deck: ${report.repos.length} ${report.repos.length === 1 ? 'repository' : 'repositories'} reported to your command`
         // Say so every time it fails: a sink that dies quietly is invisible.
@@ -202,6 +210,7 @@ export async function run(argv: string[], version: string): Promise<void> {
     }
     await tick()
     console.log(`jq-deck: reporting every ${a.intervalS}s (Ctrl-C to stop)`)
+    console.log(ctx.sendQuestions.length ? `jq-deck: question text IS sent for sessions under: ${ctx.sendQuestions.join(', ')}` : 'jq-deck: question text is not sent')
     setInterval(tick, a.intervalS * 1000)
     return
   }

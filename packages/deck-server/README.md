@@ -8,7 +8,9 @@ Each machine runs [jq-deck](../deck) and reports counts and scores for the repos
 
 Per repository: its name, its git remote (`host/owner/name`), how many sessions, how many are waiting on a person and since when, the setup score, and the unread mail count.
 
-It does not send a folder path, the text of any question, any message, or any file name. The server drops every field it does not know, so a sender cannot put more on the board even by mistake. A machine reports only the repositories it lists.
+It does not send a folder path, any message, or any file name. The server drops every field it does not know, so a sender cannot put more on the board even by mistake. A machine reports only the repositories it lists.
+
+**What a waiting session asked is sent only if that machine opts the folder in,** with `jq-deck --watch --send-questions ~/code/shop`. It is off by default. When on, the text is cut to 400 characters and strings shaped like secrets are removed by jq-agents before it leaves; that removal is a pattern list and can miss one. Opt a folder in only if you would be content for everyone who can see that repository on the board to read the session's last message. The board shows a question only while its machine is current, and only to viewers who may see that repository.
 
 ## Set it up
 
@@ -40,10 +42,20 @@ jq-deck --watch --repos shop,api --exec "jq-deck-server send --url https://deck.
 
 A viewer opens the server's address and pastes their token into the sign-in page.
 
+### As a container
+
+```sh
+docker build -f packages/deck-server/Dockerfile -t jq-deck-server .     # from the repository root
+docker run -p 4320:4320 -v jq-deck-data:/data jq-deck-server
+docker exec <container> jq-deck-server add-machine dana-laptop --who "Dana"
+```
+
+The data folder is `/data`. Mount a volume there, or a restart forgets every token. The port comes from `$PORT` when the platform sets one. `GET /healthz` answers `ok` for a health check.
+
 ## The page
 
 - **The line at the top** says how many sessions are waiting on a person and which has waited longest.
-- **One card per repository,** with a row per machine: sessions, waiting, setup score, unread mail, and when the machine was last heard from. The same repository on two machines is one card when both have the same git remote.
+- **One card per repository,** with a row per machine: sessions, waiting, setup score, unread mail, and when the machine was last heard from. Where a machine opted in, what its waiting sessions asked is under its row. The same repository on two machines is one card when both have the same git remote.
 - **A machine not heard from for 5 minutes is not counted.** Its rows stay, greyed, marked "not current". After a day its rows are hidden and it is listed as silent. Old numbers never look current.
 - The page reloads every minute. It is read-only: there is no way to answer a session from it.
 
