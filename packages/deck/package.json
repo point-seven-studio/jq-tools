@@ -1,0 +1,64 @@
+{
+  "name": "@point-seven-studio/jq-deck",
+  "version": "0.1.0",
+  "description": "One command, one local page: every Claude Code session on your machine, the setup check for each repository, and the mailbox between sessions. Read-only; sends nothing anywhere. Unofficial; not affiliated with or endorsed by Anthropic.",
+  "bin": {
+    "jq-deck": "dist/jq-deck.mjs"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "types": "./dist/types/index.d.ts",
+  "files": [
+    "dist/jq-deck.mjs",
+    "dist/index.mjs",
+    "dist/types",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude-code",
+    "coding-agents",
+    "multi-agent",
+    "developer-tools",
+    "ai-coding"
+  ],
+  "author": "Point Seven Studio",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/point-seven-studio/jq-tools.git",
+    "directory": "packages/deck"
+  },
+  "homepage": "https://github.com/point-seven-studio/jq-tools/tree/main/packages/deck#readme",
+  "bugs": {
+    "url": "https://github.com/point-seven-studio/jq-tools/issues"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "./build.sh",
+    "check": "./build.sh --deps && npm run typecheck && npm test && ./build.sh --check",
+    "prepublishOnly": "npm run check"
+  },
+  "devDependencies": {
+    "@point-seven-studio/jq-agents": "^0.1.1",
+    "@point-seven-studio/jq-crosstalk": "^0.1.1",
+    "@point-seven-studio/jq-groundcrew": "^0.1.2",
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
