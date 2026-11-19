@@ -9,12 +9,12 @@ It is plain files on your machine. It sends nothing anywhere.
 ## Start
 
 ```sh
-npx jq-crosstalk init ~/crosstalk api web mobile   # one name per session
+npx @point-seven-studio/jq-crosstalk init ~/crosstalk api web mobile   # one name per session
 export CROSSTALK_DIR=~/crosstalk
 export CROSSTALK_SELF=web                          # in each session: who it is
 ```
 
-After `npm install -g jq-crosstalk` the command is `crosstalk`. It needs bash (macOS or Linux) and, for the page, Node 18 or later.
+After `npm install -g @point-seven-studio/jq-crosstalk` the command is `crosstalk`. It needs bash (macOS or Linux) and, for the page, Node 18 or later.
 
 ## Send, answer, acknowledge
 
@@ -78,7 +78,7 @@ If the mailbox has an executable `hooks/after`, it runs after every `send`, `ack
 ## As a library
 
 ```js
-import { readMailbox, waitingBoard, deriveThreads, boardPosts } from 'jq-crosstalk'
+import { readMailbox, waitingBoard, deriveThreads, boardPosts } from '@point-seven-studio/jq-crosstalk'
 
 const messages = readMailbox(process.env.CROSSTALK_DIR)
 console.log(waitingBoard(messages, Date.now()).headline)

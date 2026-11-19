@@ -11,16 +11,16 @@ It runs on your machine. It sends nothing anywhere.
 In the folder of a project:
 
 ```sh
-npx jq-groundcrew
+npx @point-seven-studio/jq-groundcrew
 ```
 
 Then open <http://127.0.0.1:4317>. Refresh the page to check again after a change.
 
 ```sh
-npx jq-groundcrew path/to/project    # check another folder
-npx jq-groundcrew --html report.html # write the page to a file
-npx jq-groundcrew --json             # print the report
-npx jq-groundcrew --port 5000        # serve on another port
+npx @point-seven-studio/jq-groundcrew path/to/project    # check another folder
+npx @point-seven-studio/jq-groundcrew --html report.html # write the page to a file
+npx @point-seven-studio/jq-groundcrew --json             # print the report
+npx @point-seven-studio/jq-groundcrew --port 5000        # serve on another port
 ```
 
 It needs Node 18 or later. It has no dependency.
@@ -30,7 +30,7 @@ It needs Node 18 or later. It has no dependency.
 From version 0.1.1, `--fail-on fail` exits with code 1 when any check fails. `--fail-on warn` also counts a warning. The report still prints to stdout, and each counted check is named on stderr.
 
 ```sh
-npx jq-groundcrew@0.1.1 --json --fail-on fail
+npx @point-seven-studio/jq-groundcrew@0.1.1 --json --fail-on fail
 ```
 
 Pin the version, so a new check cannot fail your build overnight. Running it only when the setup changes (`CLAUDE.md`, `.claude/`, `.env*`) is enough.
