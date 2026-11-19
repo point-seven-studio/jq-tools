@@ -1,0 +1,61 @@
+{
+  "name": "@point-seven-studio/jq-deck-server",
+  "version": "0.1.0",
+  "description": "A small server for a team's JQ Deck: each machine reports counts and scores per repository, and one page shows what is waiting on a person across the team. Self-hosted; stores files in one folder; no dependency. Unofficial; not affiliated with or endorsed by Anthropic.",
+  "bin": {
+    "jq-deck-server": "dist/jq-deck-server.mjs"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "types": "./dist/types/index.d.ts",
+  "files": [
+    "dist/jq-deck-server.mjs",
+    "dist/index.mjs",
+    "dist/types",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude-code",
+    "coding-agents",
+    "multi-agent",
+    "developer-tools",
+    "team"
+  ],
+  "author": "Point Seven Studio",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/point-seven-studio/jq-tools.git",
+    "directory": "packages/deck-server"
+  },
+  "homepage": "https://github.com/point-seven-studio/jq-tools/tree/main/packages/deck-server#readme",
+  "bugs": {
+    "url": "https://github.com/point-seven-studio/jq-tools/issues"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "./build.sh",
+    "check": "npm run typecheck && npm test && ./build.sh --check",
+    "prepublishOnly": "npm run check"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

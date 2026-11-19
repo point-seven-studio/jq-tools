@@ -45,7 +45,7 @@ Optional. `~/.jq/config.json`, or the file named by `--config` or `$JQ_DECK_CONF
 }
 ```
 
-`names` maps an inbox to a repository folder. `questions` is the same as `--questions`.
+`names` maps an inbox to a repository folder. `questions` is the same as `--questions`. `"report": ["shop", "api"]` is the same as `--repos`.
 
 ## What it reads, and what it does not send
 
@@ -53,8 +53,21 @@ Optional. `~/.jq/config.json`, or the file named by `--config` or `$JQ_DECK_CONF
 - It is **read-only**. There is no way to answer a session or send mail from the page.
 - **Question text is off by default.** The page says a session is waiting, not what it asked. `--questions DIR,DIR` turns it on for sessions under those folders.
 - **Mail is shown in full** on the Mail tab, to anyone who can open the page on this machine.
-- **Nothing leaves your machine** unless you pass `--probe`, which times one connection to `api.anthropic.com` so the Sessions tab can name the network as a bottleneck.
+- **Nothing leaves your machine** unless you pass `--probe`, which times one connection to `api.anthropic.com` so the Sessions tab can name the network as a bottleneck, or `--watch --exec CMD`, which hands a report to a command of yours (below).
 - The server listens on `127.0.0.1` only, answers only requests addressed to `127.0.0.1` or `localhost`, refuses anything but GET, and may not be framed by another site. The Setup tab checks only repositories the page lists: a URL carries an id, never a path.
+
+## Reporting to a team board
+
+```sh
+export JQ_DECK_TOKEN=jqm_...
+npx @point-seven-studio/jq-deck --watch --repos shop,api --exec "jq-deck-server send --url https://deck.example.com"
+```
+
+Every interval (60 seconds, or `--interval`), your command receives one JSON report on stdin. [jq-deck-server](../deck-server) is a server that takes them; any command works.
+
+- **You list what is reported.** `--repos` (or `report` in the config file) names the repositories, by folder name, remote or path. Nothing else is in the report, not even as a count. `--all-repos` reports every one. With neither, `--watch` refuses to start.
+- **A report is counts and scores:** per repository its name, git remote, session counts, how long the longest-waiting session has waited, the setup score and the unread count. No folder path, no question text (whatever `--questions` says), no message, no file name.
+- If the command fails, jq-deck says so each time.
 
 ## As a library
 
@@ -67,7 +80,7 @@ console.log(overview.headline)
 
 ## Limits
 
-- **One machine.** It shows your own account's sessions on this machine. A view across a team's machines needs a server, which is not in this package.
+- **One machine.** The page shows your own account's sessions on this machine. For a view across a team's machines, report to [jq-deck-server](../deck-server).
 - Everything each tool lists as a limit applies here: jq-agents depends on Claude Code internals and samples resources on macOS only; a mailbox has no access control.
 - Every page load reads again. With many repositories the Overview runs the setup check on each, which takes a moment.
 

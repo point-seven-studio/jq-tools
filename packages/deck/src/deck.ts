@@ -21,6 +21,8 @@ export interface DeckConfig {
   names?: Record<string, string>
   /** Folders whose waiting sessions may show their question text. */
   questions?: string[]
+  /** The repositories --watch may report to a team board: names, remotes or folders. */
+  report?: string[]
 }
 
 export const expandHome = (p: string) => (p === '~' || p.startsWith('~/') ? path.join(os.homedir(), p.slice(1)) : p)
@@ -46,6 +48,7 @@ export function loadConfig(file: string): DeckConfig {
     out.names = {}
     for (const [k, v] of Object.entries(r.names as Record<string, unknown>)) if (typeof v === 'string') out.names[k] = path.resolve(expandHome(v))
   }
+  if (Array.isArray(r.report)) out.report = r.report.filter((q): q is string => typeof q === 'string')
   if (Array.isArray(r.questions)) out.questions = r.questions.filter((q): q is string => typeof q === 'string').map(expandHome)
   return out
 }
@@ -97,6 +100,10 @@ export interface RepoRow {
   /** Sessions that asked something and were left. */
   abandoned: number
   last_activity_at: string | null
+  /** When the longest-waiting session that needs a person last did anything. */
+  waiting_since: string | null
+  /** The origin remote as host/owner/name, when the folder has one. Names the same repository on two machines. */
+  remote: string | null
   /** null when the setup check could not run; `setup_note` says why. */
   setup: { score: number; fail: number; warn: number } | null
   setup_note: string | null
@@ -146,6 +153,8 @@ export function buildOverview(input: {
   mailbox: string | null
   mailNote?: string | null
   names?: Record<string, string>
+  /** Folder → origin remote, as host/owner/name. */
+  remotes?: Map<string, string>
 }): Overview {
   const { snapshot, waiting } = input
   const byTree = new Map<string, AgentStatusRow[]>()
@@ -171,6 +180,8 @@ export function buildOverview(input: {
       needs_you: attention.filter((a) => a === 'needs-you').length,
       abandoned: attention.filter((a) => a === 'abandoned').length,
       last_activity_at: rows.map((r) => r.last_activity_at || '').sort().pop() || null,
+      waiting_since: rows.filter((_, i) => attention[i] === 'needs-you').map((r) => r.last_activity_at || '').filter(Boolean).sort()[0] ?? null,
+      remote: input.remotes?.get(tree) ?? null,
       setup: setup && 'summary' in setup ? { score: setup.summary.score, fail: setup.summary.fail, warn: setup.summary.warn } : null,
       setup_note: setup && 'error' in setup ? setup.error : setup ? null : 'not checked',
       inbox,
@@ -197,5 +208,87 @@ export function buildOverview(input: {
     mailbox: input.mailbox,
     mail,
     mail_note: mailNote,
+  }
+}
+
+/**
+ * "git@github.com:acme/shop.git" and "https://github.com/acme/shop" are both
+ * "github.com/acme/shop". Any user name or token in the address is dropped.
+ * null when the address is not one of the shapes git hosts use.
+ */
+export function normalizeRemote(url: string): string | null {
+  const u = url.trim()
+  const m = /^[a-z+]+:\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.+)$/i.exec(u) ?? /^(?:[^@/]+@)?([^/:]+):(?!\/)(.+)$/.exec(u)
+  if (!m) return null
+  const repoPath = m[2].replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '')
+  if (!repoPath || /\s/.test(repoPath)) return null
+  return `${m[1].toLowerCase()}/${repoPath}`
+}
+
+/** The url of [remote "origin"] in a git config file's text. */
+export function originIn(config: string): string | null {
+  let inOrigin = false
+  for (const line of config.split('\n')) {
+    const section = /^\s*\[(.+)\]\s*$/.exec(line)
+    if (section) inOrigin = /^remote\s+"origin"$/.test(section[1].trim())
+    else if (inOrigin) {
+      const url = /^\s*url\s*=\s*(.+?)\s*$/.exec(line)
+      if (url) return normalizeRemote(url[1])
+    }
+  }
+  return null
+}
+
+/**
+ * What one machine tells a team board: counts and scores per repository. It
+ * carries no folder path, no question text, no message and no file name.
+ */
+export interface TeamReport {
+  v: 1
+  generated_at: string
+  repos: {
+    name: string
+    remote: string | null
+    sessions: number
+    live: number
+    needs_you: number
+    abandoned: number
+    waiting_since: string | null
+    last_activity_at: string | null
+    setup: { score: number; fail: number; warn: number } | null
+    unread: number | null
+  }[]
+}
+
+/** Is this repository on the list? An entry is a folder name, a remote (host/owner/name) or a folder path. */
+export function reportable(r: Pick<RepoRow, 'name' | 'remote' | 'tree'>, only: string[]): boolean {
+  return only.some((entry) => {
+    const e = entry.trim()
+    if (!e) return false
+    if (e.toLowerCase() === r.name.toLowerCase() || (!!r.remote && e.toLowerCase() === r.remote.toLowerCase())) return true
+    return /^[~/.]/.test(e) && path.resolve(expandHome(e)) === r.tree
+  })
+}
+
+/**
+ * `only` is the list of repositories this machine agreed to report. With a
+ * list, nothing else is in the report, not even as a count. null reports all.
+ */
+export function teamReport(o: Overview, only: string[] | null = null): TeamReport {
+  return {
+    v: 1,
+    generated_at: o.generated_at,
+    repos: o.repos.filter((r) => only === null || reportable(r, only)).map((r) => ({
+      name: r.name,
+      remote: r.remote,
+      sessions: r.sessions,
+      live: r.live,
+      needs_you: r.needs_you,
+      abandoned: r.abandoned,
+      waiting_since: r.waiting_since,
+      last_activity_at: r.last_activity_at,
+      setup: r.setup,
+      unread: r.unread,
+    })),
   }
 }
