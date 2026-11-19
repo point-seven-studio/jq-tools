@@ -7,15 +7,15 @@ If you run several sessions at once, the cost is the ones that stopped to ask yo
 ## Run it
 
 ```sh
-npx jq-agents
+npx @point-seven-studio/jq-agents
 ```
 
 Then open <http://127.0.0.1:4319>. Refresh to read again.
 
 ```sh
-npx jq-agents --json             # print one snapshot
-npx jq-agents --html board.html  # write the page to a file
-npx jq-agents --port 5000
+npx @point-seven-studio/jq-agents --json             # print one snapshot
+npx @point-seven-studio/jq-agents --html board.html  # write the page to a file
+npx @point-seven-studio/jq-agents --port 5000
 ```
 
 Node 18 or later. No dependency.
@@ -36,7 +36,7 @@ Sessions are grouped by working tree (the git repository a session is in), becau
 - **Question text is off by default.** The board says a session is waiting, not what it asked. To show the question for sessions in chosen folders:
 
   ```sh
-  npx jq-agents --questions ~/code/my-app,~/code/other
+  npx @point-seven-studio/jq-agents --questions ~/code/my-app,~/code/other
   ```
 
   The text is cut to 400 characters and strings shaped like secrets are removed. That removal is a pattern list, so it can miss one: only turn this on for folders where you would be content to read the session's last message on this screen.
@@ -49,7 +49,7 @@ Sessions are grouped by working tree (the git repository a session is in), becau
 For a team board or a history, run it as a relay and give it a command that stores the snapshot:
 
 ```sh
-npx jq-agents --watch --interval 60 --exec './store-snapshot.sh'
+npx @point-seven-studio/jq-agents --watch --interval 60 --exec './store-snapshot.sh'
 ```
 
 Every interval, your command receives one JSON snapshot on stdin (`machine`, `generated_at`, `sessions`, `host`, `bottleneck`). If the command fails, the relay says so each time. This package stores nothing and has no server; where snapshots go, and who may read them, is yours to decide. Question text only appears in a snapshot for folders you listed with `--questions`.
@@ -57,7 +57,7 @@ Every interval, your command receives one JSON snapshot on stdin (`machine`, `ge
 ## As a library
 
 ```js
-import { snapshot, totals, deriveAttention, computeBlockedEpisodes } from 'jq-agents'
+import { snapshot, totals, deriveAttention, computeBlockedEpisodes } from '@point-seven-studio/jq-agents'
 
 const snap = await snapshot({ sample: false })
 console.log(totals(snap.sessions))
