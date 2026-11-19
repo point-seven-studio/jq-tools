@@ -6,6 +6,10 @@ If you run several coding-agent sessions (one per product, repo or role), they n
 
 It is plain files on your machine. It sends nothing anywhere.
 
+![The crosstalk page for a mailbox: unread mail per inbox, then an open board post with two replies marked checked and not checked.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/crosstalk/docs/screenshot.png)
+
+*The data in the picture is made up.*
+
 ## Start
 
 ```sh

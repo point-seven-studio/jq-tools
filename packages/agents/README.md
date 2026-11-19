@@ -4,6 +4,10 @@ A local, read-only board of every Claude Code session on your machine: what each
 
 If you run several sessions at once, the cost is the ones that stopped to ask you something an hour ago in a window you forgot. This shows them on one page.
 
+![The JQ Agents board: two sessions waiting on a person, grouped by working tree, with the question one of them asked.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/agents/docs/screenshot.png)
+
+*The data in the picture is made up.*
+
 ## Run it
 
 ```sh

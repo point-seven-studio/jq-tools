@@ -6,6 +6,10 @@ Groundcrew reads how Claude Code is set up for a project and shows you what to f
 
 It runs on your machine. It sends nothing anywhere.
 
+![The JQ Groundcrew page for a project: one check to fix, four to look at, five good, and the first check with a prompt to paste into Claude Code.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/groundcrew/docs/screenshot.png)
+
+*The data in the picture is made up.*
+
 ## Run it
 
 In the folder of a project:

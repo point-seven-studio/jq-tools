@@ -118,6 +118,28 @@ describe('the board', () => {
     const report = buildReport(box)
     expect(report.board.closed.map((c) => [c.title, c.settled_by, c.replies.length])).toEqual([['How do refunds work?', 'fix', 1]])
   })
+  it('keeps both of two replies sent in the same second', () => {
+    const post = ct(['post', 'Who owns refunds?', '--tags', 'payments'], { self: 'web' })
+    // Fired without waiting, so several land in one second on any machine.
+    const replies = [
+      ct(['reply', post, '--evidence', 'verified'], { self: 'api', body: 'from api' }),
+      ct(['reply', post, '--evidence', 'assumed'], { self: 'mobile', body: 'from mobile' }),
+      ct(['reply', post, '--evidence', 'assumed'], { self: 'api', body: 'api again' }),
+    ]
+    expect(new Set(replies).size).toBe(3)
+    const bodies = replies.map((f) => readFileSync(f, 'utf8'))
+    expect(bodies[0]).toContain('from api')
+    expect(bodies[1]).toContain('from mobile')
+    expect(bodies[2]).toContain('api again')
+    const board = buildReport(box).board.open[0]
+    expect(board.replies).toHaveLength(3)
+    // Same again for plain mail: a name is not reused, even after an ack.
+    const first = ct(['send', 'api', 'Same subject'], { self: 'web', body: 'one' })
+    ct(['ack', first], { self: 'api' })
+    const second = ct(['send', 'api', 'Same subject'], { self: 'web', body: 'two' })
+    expect(path.basename(second)).not.toBe(path.basename(first))
+  })
+
   it('needs tags and takes only posts and replies', () => {
     expect(fails(['post', 'No tags'], { self: 'api' })).toContain('--tags')
     expect(fails(['send', 'board', 'Direct'], { self: 'api' })).toContain('posts and replies')

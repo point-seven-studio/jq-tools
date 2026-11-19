@@ -4,6 +4,10 @@ One command, one local page: every Claude Code session on your machine, the setu
 
 It is [jq-agents](../agents), [jq-groundcrew](../groundcrew) and [jq-crosstalk](../crosstalk) behind one page. It reads what they read and writes nothing.
 
+![The JQ Deck overview: one row per repository with its sessions, setup score and unread mail.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck/docs/screenshot.png)
+
+*The data in the picture is made up.*
+
 ## Run it
 
 ```sh
