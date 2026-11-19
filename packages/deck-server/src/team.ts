@@ -92,7 +92,7 @@ export function buildTeam(reports: StoredReport[], now: number, viewer: Pick<Vie
       const group = groups.get(key) ?? { key, name: repo.name, remote: repo.remote, needs_you: 0, rows: [] }
       const fresh = state.freshness === 'fresh'
       const since = fresh && repo.needs_you > 0 && repo.waiting_since ? Math.max(0, Math.floor((now - Date.parse(repo.waiting_since)) / 60_000)) : null
-      group.rows.push({ ...repo, machine: stored.machine, who: stored.who, ...state, waiting_minutes: since })
+      group.rows.push({ ...repo, questions: fresh ? repo.questions : undefined, machine: stored.machine, who: stored.who, ...state, waiting_minutes: since })
       if (fresh) group.needs_you += repo.needs_you
       groups.set(key, group)
     }

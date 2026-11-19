@@ -50,6 +50,17 @@ describe('sanitizeReport', () => {
     expect(() => sanitizeReport(report([repo({ waiting_since: 'yesterday' })]))).toThrow('waiting_since')
     expect(() => sanitizeReport(report(Array.from({ length: 201 }, () => repo())))).toThrow('at most 200')
   })
+  it('takes question text only as short plain text', () => {
+    const q = (questions: unknown) => sanitizeReport(report([repo({ questions })])).repos[0].questions
+    expect(q([{ asked_at: '2026-11-19T11:20:00Z', text: '  Shall I merge it?\u0000\u001b[31m  ', extra: 1 }])).toEqual([{ asked_at: '2026-11-19T11:20:00.000Z', text: 'Shall I merge it?[31m' }])
+    expect(q([{ asked_at: null, text: 'x'.repeat(900) }])![0].text).toHaveLength(400)
+    expect(q([{ asked_at: null, text: '   ' }])).toBeUndefined()
+    expect(q(undefined)).toBeUndefined()
+    expect(sanitizeReport(report([repo()])).repos[0]).not.toHaveProperty('questions')
+    expect(() => q('Shall I?')).toThrow('questions')
+    expect(() => q([{ text: 5 }])).toThrow('text')
+    expect(() => q(Array.from({ length: 21 }, () => ({ asked_at: null, text: 'q' })))).toThrow('at most 20')
+  })
   it('keeps unknown as unknown', () => {
     const r = sanitizeReport(report([repo({ unread: null, setup: null, waiting_since: null })])).repos[0]
     expect(r).toMatchObject({ unread: null, setup: null, waiting_since: null })
@@ -136,6 +147,18 @@ describe('buildTeam', () => {
     expect(buildTeam(reports, NOW, { repos: ['nothing'] }).headline).toBe('No machine has reported a repository you can see.')
     expect(visible(null, repo())).toBe(true)
     expect(visible({ repos: [] }, repo())).toBe(true)
+  })
+  it('shows a question only to who may see the repository, and only while it is current', () => {
+    const asked = { questions: [{ asked_at: '2026-11-19T11:20:00.000Z', text: 'Shall I <b>merge</b> it?' }] }
+    const reports = [stored('a', 'Dana', 1, [repo(asked)]), stored('b', 'Lee', 1, [repo({ name: 'secret', remote: null, questions: [{ asked_at: null, text: 'Rotate the key?' }] })]), stored('c', 'Sam', 30, [repo({ questions: [{ asked_at: null, text: 'An old one?' }] })])]
+    const all = renderTeam(buildTeam(reports, NOW), 'owner', 't')
+    expect(all).toContain('Shall I &lt;b&gt;merge&lt;/b&gt; it?')
+    expect(all).toContain('Rotate the key?')
+    expect(all).not.toContain('An old one?')
+    expect(all).not.toContain('<b>merge')
+    const scoped = buildTeam(reports, NOW, { repos: ['shop'] })
+    expect(JSON.stringify(scoped)).toContain('merge')
+    expect(JSON.stringify(scoped)).not.toMatch(/Rotate|An old one/)
   })
   it('measures staleness and durations plainly', () => {
     expect(freshness(new Date(NOW - 5 * 60_000).toISOString(), NOW).freshness).toBe('fresh')

@@ -9,10 +9,12 @@ const HELP = `JQ Deck ${VERSION}: one page for your Claude Code sessions, their 
   jq-deck                        open the page at http://127.0.0.1:${DEFAULT_PORT}
   jq-deck --json                 print the overview
   jq-deck --watch --exec CMD     every interval, pipe a team report (JSON) to CMD:
-                                 counts and scores per repository, no paths, no
-                                 question text, no mail
+                                 counts and scores per repository, no paths, no mail,
+                                 and no question text unless you opt a folder in
         --repos NAME,NAME        which repositories to report (required, or "report"
                                  in the config file); --all-repos reports every one
+        --send-questions DIR,DIR also send what a waiting session asked, for sessions
+                                 under these folders (default: none)
         --interval SECONDS       for --watch (default 60)
   jq-deck --mailbox DIR          the crosstalk mailbox to show (default: $CROSSTALK_DIR,
                                  or the nearest folder above you holding .crosstalk)

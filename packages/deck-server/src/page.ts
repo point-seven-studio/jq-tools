@@ -20,6 +20,8 @@ h1{font-size:22px;margin:0}h2{font-size:15px;margin:22px 0 8px}.head{margin:4px 
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 12px;border-top:1px solid var(--line);vertical-align:top;font-weight:400}
 thead th{font-size:12px;color:var(--mut);font-weight:600}tbody th{font-weight:600}
 tr.quiet td,tr.quiet th{color:var(--mut)}
+tr.asked td{border-top:0;padding-top:0}tr.asked td::before{content:none}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--well);margin:6px 0 2px;padding:10px;border-radius:8px;font:12px ui-monospace,monospace}
 .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 button{white-space:nowrap;font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:4px 10px;cursor:pointer}
 input{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
@@ -41,7 +43,12 @@ function row(r: TeamRow): string {
     ? '<span class="mut">not checked</span>'
     : `${r.setup.score}% ${r.setup.fail > 0 ? `<span class="bad">${r.setup.fail} to fix</span>` : r.setup.warn > 0 ? `<span class="warn">${r.setup.warn} to look at</span>` : '<span class="ok">all good</span>'}`
   const mail = r.unread === null ? '<span class="mut">no inbox</span>' : r.unread === 0 ? '<span class="mut">none unread</span>' : `${r.unread} unread`
-  return `<tr${quiet ? ' class="quiet"' : ''}><th scope="row">${esc(r.who)} <span class="mut">${esc(r.machine)}</span></th><td data-l="Sessions">${r.sessions} <span class="mut">(${r.live} live)</span></td><td data-l="Waiting on a person">${waiting}</td><td data-l="Setup">${setup}</td><td data-l="Mail">${mail}</td><td data-l="Last heard"><span class="mut">${esc(heard(r.minutes_ago))}</span></td></tr>`
+  // An old question may have been answered since: shown only while the machine is current.
+  const asked = (r.questions ?? [])
+    .map((q) => `<pre>${esc(q.text)}</pre>`)
+    .join('')
+  const askedRow = asked ? `<tr class="asked"><td colspan="6"><span class="mut">${esc(r.who)}'s ${r.questions!.length === 1 ? 'session asked' : 'sessions asked'} (sent because that machine opted this folder in):</span>${asked}</td></tr>` : ''
+  return `<tr${quiet ? ' class="quiet"' : ''}><th scope="row">${esc(r.who)} <span class="mut">${esc(r.machine)}</span></th><td data-l="Sessions">${r.sessions} <span class="mut">(${r.live} live)</span></td><td data-l="Waiting on a person">${waiting}</td><td data-l="Setup">${setup}</td><td data-l="Mail">${mail}</td><td data-l="Last heard"><span class="mut">${esc(heard(r.minutes_ago))}</span></td></tr>${askedRow}`
 }
 
 export function renderTeam(team: Team, viewerName: string, version: string): string {
@@ -62,7 +69,7 @@ export function renderTeam(team: Team, viewerName: string, version: string): str
 ${groups || '<p class="card pad mut">No repository to show.</p>'}
 <h2>Machines</h2>
 <div class="card"><ul>${machines || '<li class="mut">None yet. On each machine: <code>jq-deck --watch --exec "jq-deck-server send --url THIS-ADDRESS"</code></li>'}</ul></div>
-<p class="mut">A machine sends counts and scores only: no folder path, no question text, no message. JQ Deck Server ${esc(version)}.</p>
+<p class="mut">A machine sends counts and scores: no folder path and no message. What a session asked is sent only where that machine opted the folder in. JQ Deck Server ${esc(version)}.</p>
 </main></body></html>`
 }
 

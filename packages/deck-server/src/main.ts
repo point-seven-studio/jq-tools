@@ -21,7 +21,8 @@ On each machine that reports:
   JQ_DECK_TOKEN=... jq-deck --watch --exec "jq-deck-server send --url ADDRESS"
 
 The folder comes from --dir or $JQ_DECK_SERVER_DIR. A report holds counts and scores
-per repository: no folder path, no question text, no message. The server keeps the
+per repository: no folder path and no message. What a waiting session asked is in a
+report only when that machine opted the folder in (jq-deck --send-questions). The server keeps the
 latest report from each machine, as files in that folder, and calls nothing.
 
 Unofficial. Not affiliated with or endorsed by Anthropic.`

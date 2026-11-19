@@ -120,9 +120,40 @@ describe('the team report', () => {
       remotes: new Map([['/Users/dana/code/shop', 'github.com/acme/shop']]),
     })
     const report = teamReport(o)
+    expect(o.repos[0].questions).toEqual([{ asked_at: '2026-11-18T11:00:00Z', text: 'Shall I drop the table?' }])
     expect(report.repos).toEqual([{ name: 'shop', remote: 'github.com/acme/shop', sessions: 1, live: 0, needs_you: 1, abandoned: 0, waiting_since: '2026-11-18T11:00:00Z', last_activity_at: '2026-11-18T11:00:00Z', setup: { score: 67, fail: 2, warn: 1 }, unread: 2 }])
     const text = JSON.stringify(report)
     for (const secret of ['/Users/', 'dana', 'drop the table', 'crosstalk', 'Hi']) expect(text).not.toContain(secret)
+  })
+})
+
+describe('question text in a report', () => {
+  const asked = (over: object = {}) => session({ working_tree: '/code/shop', state: 'idle', waiting: true, blocked_question: 'Shall I merge it?', question_allowed: true, last_activity_at: '2026-11-18T11:00:00Z', ...over })
+  const o = buildOverview({
+    snapshot: snap([asked(), asked({ session_id: 'b', blocked_question: 'Which region?', last_activity_at: '2026-11-18T10:00:00Z' }), asked({ session_id: 'c', working_tree: '/code/client-x', product: 'client-x', blocked_question: 'Rotate the key?' }), asked({ session_id: 'd', question_allowed: false, blocked_question: null }), asked({ session_id: 'e', state: 'stale', blocked_question: 'Old one?' })]),
+    trees: ['/code/shop', '/code/client-x'],
+    setups: new Map(),
+    waiting: null,
+    mailbox: null,
+  })
+  it('is sent only for a folder that opted in, longest-waiting first', () => {
+    expect(JSON.stringify(teamReport(o))).not.toMatch(/merge it|Which region|Rotate/)
+    const sent = teamReport(o, null, ['/code/shop'])
+    expect(sent.repos.find((r) => r.name === 'shop')!.questions).toEqual([{ asked_at: '2026-11-18T10:00:00Z', text: 'Which region?' }, { asked_at: '2026-11-18T11:00:00Z', text: 'Shall I merge it?' }])
+    expect(sent.repos.find((r) => r.name === 'client-x')).not.toHaveProperty('questions')
+    expect(JSON.stringify(sent)).not.toMatch(/Rotate|Old one/)
+    expect(teamReport(o, null, ['/code']).repos.every((r) => r.questions)).toBe(true)
+    expect(teamReport(o, null, ['/code/sho']).repos.some((r) => r.questions)).toBe(false)
+  })
+  it('is never sent for a repository that is not reported', () => {
+    expect(JSON.stringify(teamReport(o, ['client-x'], ['/code/shop']))).not.toMatch(/merge it|Which region|shop/)
+  })
+  it('needs its own flag: showing questions on your screen does not send them', () => {
+    const none = path.join(dir, 'none.json')
+    const base = ['--config', none, '--watch', '--exec', 'cat', '--all-repos']
+    expect(buildContext(parseArgs([...base, '--questions', '/code/shop']), {}, dir, 't').sendQuestions).toEqual([])
+    expect(buildContext(parseArgs([...base, '--send-questions', '/code/shop']), {}, dir, 't').sendQuestions).toEqual(['/code/shop'])
+    expect(() => parseArgs(['--send-questions', '/code/shop'])).toThrow('--watch')
   })
 })
 
@@ -223,7 +254,7 @@ describe('the page', () => {
 
 describe('the request handler', () => {
   const tree = () => path.join(dir, 'proj')
-  const ctx = (over: Partial<Context['deck']> = {}): Context => ({ port: 4316, version: 't', probe: false, sample: false, report: null, deck: { mailbox: null, projectsDir: path.join(dir, 'projects'), sockDir: path.join(dir, 'socks'), now: NOW, machine: 'test-mac', ...over } })
+  const ctx = (over: Partial<Context['deck']> = {}): Context => ({ port: 4316, version: 't', probe: false, sample: false, report: null, sendQuestions: [], deck: { mailbox: null, projectsDir: path.join(dir, 'projects'), sockDir: path.join(dir, 'socks'), now: NOW, machine: 'test-mac', ...over } })
   beforeEach(() => {
     mkdirSync(path.join(dir, 'projects', 'a'), { recursive: true })
     mkdirSync(path.join(dir, 'socks'))
