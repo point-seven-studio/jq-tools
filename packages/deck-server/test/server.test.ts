@@ -205,7 +205,10 @@ describe('the HTTP handler', () => {
     const bad = handle({ method: 'POST', path: '/login', body: 'token=nope' }, ctx)
     expect(bad.status).toBe(401)
     expect(bad.headers['set-cookie']).toBeUndefined()
-    expect(handle({ method: 'POST', path: '/login', body: `token=${encodeURIComponent(machine)}` }, ctx).status).toBe(401)
+    const wrongKind = handle({ method: 'POST', path: '/login', body: `token=${encodeURIComponent(machine)}` }, ctx)
+    expect(wrongKind.status).toBe(401)
+    expect(wrongKind.body).toContain('That is a machine token')
+    expect(wrongKind.headers['set-cookie']).toBeUndefined()
     const ok = handle({ method: 'POST', path: '/login', body: `token=${encodeURIComponent(viewer)}` }, ctx)
     expect(ok.status).toBe(303)
     expect(ok.headers['set-cookie']).toMatch(/^jq_deck=jqv_.+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=2592000; Secure$/)
@@ -227,6 +230,19 @@ describe('the HTTP handler', () => {
     expect(page).toContain('&lt;img')
     expect(page).not.toMatch(/<script|https?:\/\//)
     expect(renderTeam(buildTeam([], NOW), 'lee', 't')).toContain('None yet')
+  })
+
+  it('puts what needs a person in the tab title and the tiles, and says when each question was asked', () => {
+    const asked = repo({ questions: [{ asked_at: '2026-11-19T11:20:00.000Z', text: 'Shall I merge it?' }] })
+    const page = renderTeam(buildTeam([stored('a', 'Dana', 1, [asked]), stored('b', 'Lee', 90, [repo()])], NOW), 'owner', 't')
+    expect(page).toContain('<title>(1) JQ Deck: team</title>')
+    expect(page).toContain('<b>1<span class="mut"> of 2</span></b><span class="mut">machines reporting</span>')
+    expect(page).toContain("Dana's session asked 40 minutes ago")
+    expect(page).toContain('Read at 12:00 UTC, signed in as owner')
+    const calm = renderTeam(buildTeam([stored('a', 'Dana', 1, [repo({ needs_you: 0, waiting_since: null })])], NOW), 'owner', 't')
+    expect(calm).toContain('<title>JQ Deck: team</title>')
+    expect(calm).not.toContain('class="tile hot"')
+    expect(renderTeam(buildTeam([], NOW), 'owner', 't')).not.toContain('class="tiles"')
   })
 
   it('works over a real socket, with its headers and its size limit', async () => {

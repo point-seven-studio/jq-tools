@@ -79,7 +79,11 @@ export function handle(req: Req, ctx: ServerContext): Res {
   if (route === 'GET /login') return { status: 200, headers: HTML, body: renderLogin(null) }
   if (route === 'POST /login') {
     const token = new URLSearchParams(req.body).get('token')?.trim()
-    if (!viewerFor(config, token)) return { status: 401, headers: HTML, body: renderLogin('That token is not known to this server.') }
+    if (!viewerFor(config, token)) {
+      // The one mistake worth naming: pasting the token a machine reports with.
+      const why = machineFor(config, token) ? 'That is a machine token. Sign in with a viewer token, which starts with jqv_.' : 'That token is not known to this server.'
+      return { status: 401, headers: HTML, body: renderLogin(why) }
+    }
     return { status: 303, headers: { location: '/', 'set-cookie': cookie(ctx, token as string, 30 * 86_400) }, body: '' }
   }
   if (route === 'POST /logout') return { status: 303, headers: { location: '/login', 'set-cookie': cookie(ctx, '', 0) }, body: '' }
@@ -101,7 +105,7 @@ export const SECURITY_HEADERS: Record<string, string> = {
   'x-frame-options': 'DENY',
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
-  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
 }
 
 export function startServer(ctx: ServerContext, port: number, host: string, onListen?: (port: number) => void): Server {
