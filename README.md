@@ -8,9 +8,9 @@ Open tools for people who work with coding agents, from [Point Seven Studio](htt
 |---|---|---|
 | [`jq-groundcrew`](packages/groundcrew) | A setup check for Claude Code: what loads into every session, what runs automatically, and which guardrails are on. Runs on your machine and sends nothing anywhere. | Here. `npx jq-groundcrew` |
 | [`jq-crosstalk`](packages/crosstalk) | A file mailbox that lets several agent sessions send each other briefs and questions, with a shared board for questions anyone may answer, and a local page to see it all. | Here. Not on npm yet. |
-| `jq-agents` | A board of every agent session on your machines: what each is doing and which are waiting on a person. | Not here yet. |
+| [`jq-agents`](packages/agents) | A local, read-only board of every Claude Code session on your machine: what each is doing and which are waiting on a person. | Here. Not on npm yet. |
 
-The first two rows are in this repository. The third runs inside our own product and will be extracted next.
+All three run on your own machine and store nothing. A hosted team board is not part of this repository.
 
 ## Develop
 
