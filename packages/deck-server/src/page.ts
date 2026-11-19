@@ -19,20 +19,30 @@ h1{font-size:22px;margin:0}h2{font-size:15px;margin:22px 0 8px}.head{margin:4px 
 .card h3{font-size:15px;margin:0;padding:10px 12px;word-break:break-word}.card h3 .mut{font-weight:400}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 12px;border-top:1px solid var(--line);vertical-align:top;font-weight:400}
 thead th{font-size:12px;color:var(--mut);font-weight:600}tbody th{font-weight:600}
-tr.quiet td,tr.quiet th{color:var(--mut)}
+tr.quiet td,tr.quiet th,tr.quiet .warn,tr.quiet .bad,tr.quiet .ok{color:var(--mut)}
 tr.asked td{border-top:0;padding-top:0}tr.asked td::before{content:none}
-pre{white-space:pre-wrap;word-break:break-word;background:var(--well);margin:6px 0 2px;padding:10px;border-radius:8px;font:12px ui-monospace,monospace}
+.q{background:var(--well);margin:6px 0 2px;padding:8px 10px;border-radius:8px;border-left:3px solid var(--warn)}.q p{margin:0;white-space:pre-wrap;word-break:break-word;font-size:14px}
 .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-button{white-space:nowrap;font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:4px 10px;cursor:pointer}
+button{white-space:nowrap;font:inherit;font-size:14px;min-height:40px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:6px 14px;cursor:pointer}
+button.primary{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:600}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 4px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}.tile b{display:block;font-size:24px;line-height:1.2}.tile.hot b{color:var(--warn)}
+table{table-layout:fixed}col.who{width:24%}col.n{width:13%}col.wait{width:21%}col.setup{width:17%}col.mail{width:12%}col.heard{width:13%}
 input{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
 label{display:block;font-weight:600;margin-bottom:6px}.pad{padding:16px}
 ul{margin:0;padding:0;list-style:none}li{padding:6px 12px;border-top:1px solid var(--line)}li:first-child{border-top:0}
-@media (max-width:640px){thead{display:none}tr{display:block;border-top:1px solid var(--line);padding:6px 0}th,td{display:block;border:0;padding:2px 12px}td::before{content:attr(data-l) ": ";color:var(--mut);font-size:12px}}
+@media (max-width:760px){table,tbody{display:block}colgroup{display:none}.tile b{font-size:20px}thead{display:none}tr{display:block;border-top:1px solid var(--line);padding:6px 0}th,td{display:block;border:0;padding:2px 12px}td::before{content:attr(data-l) ": ";color:var(--mut);font-size:12px}}
 `
 
 const heard = (minutes: number) => (minutes < 1 ? 'just now' : `${duration(minutes)} ago`)
 
-function row(r: TeamRow): string {
+const minutesSince = (iso: string, now: number) => Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000))
+
+/** "23:34 UTC": the page has no script, so it cannot show the reader's own time zone. */
+export const clock = (iso: string) => `${iso.slice(11, 16)} UTC`
+
+function row(r: TeamRow, now: number): string {
   const quiet = r.freshness !== 'fresh'
   const waiting = quiet
     ? '<span class="mut">not current</span>'
@@ -45,17 +55,21 @@ function row(r: TeamRow): string {
   const mail = r.unread === null ? '<span class="mut">no inbox</span>' : r.unread === 0 ? '<span class="mut">none unread</span>' : `${r.unread} unread`
   // An old question may have been answered since: shown only while the machine is current.
   const asked = (r.questions ?? [])
-    .map((q) => `<pre>${esc(q.text)}</pre>`)
+    .map((q) => `<div class="q"><span class="mut">${esc(r.who)}'s session asked${q.asked_at ? ` ${esc(heard(minutesSince(q.asked_at, now)))}` : ''}</span><p>${esc(q.text)}</p></div>`)
     .join('')
-  const askedRow = asked ? `<tr class="asked"><td colspan="6"><span class="mut">${esc(r.who)}'s ${r.questions!.length === 1 ? 'session asked' : 'sessions asked'} (sent because that machine opted this folder in):</span>${asked}</td></tr>` : ''
+  const askedRow = asked ? `<tr class="asked"><td colspan="6">${asked}</td></tr>` : ''
   return `<tr${quiet ? ' class="quiet"' : ''}><th scope="row">${esc(r.who)} <span class="mut">${esc(r.machine)}</span></th><td data-l="Sessions">${r.sessions} <span class="mut">(${r.live} live)</span></td><td data-l="Waiting on a person">${waiting}</td><td data-l="Setup">${setup}</td><td data-l="Mail">${mail}</td><td data-l="Last heard"><span class="mut">${esc(heard(r.minutes_ago))}</span></td></tr>${askedRow}`
 }
 
 export function renderTeam(team: Team, viewerName: string, version: string): string {
+  const now = Date.parse(team.generated_at)
+  const t = team.totals
+  const known = t.machines_fresh + t.machines_quiet + t.machines_silent
+  const tiles = `<div class="tiles"><div class="tile${t.needs_you > 0 ? ' hot' : ''}"><b>${t.needs_you}</b><span class="mut">waiting on a person</span></div><div class="tile"><b>${t.sessions}</b><span class="mut">${t.sessions === 1 ? 'session' : 'sessions'}</span></div><div class="tile"><b>${t.machines_fresh}<span class="mut"> of ${known}</span></b><span class="mut">${known === 1 ? 'machine' : 'machines'} reporting</span></div></div>`
   const groups = team.groups
     .map(
       (g) =>
-        `<section class="card"><h3>${esc(g.name)}${g.remote ? ` <span class="mut">${esc(g.remote)}</span>` : ''}</h3><table><thead><tr><th scope="col">Who</th><th scope="col">Sessions</th><th scope="col">Waiting on a person</th><th scope="col">Setup</th><th scope="col">Mail</th><th scope="col">Last heard</th></tr></thead><tbody>${g.rows.map(row).join('')}</tbody></table></section>`,
+        `<section class="card"><h3>${esc(g.name)}${g.remote ? ` <span class="mut">${esc(g.remote)}</span>` : ''}</h3><table><colgroup><col class="who"><col class="n"><col class="wait"><col class="setup"><col class="mail"><col class="heard"></colgroup><thead><tr><th scope="col">Who</th><th scope="col">Sessions</th><th scope="col">Waiting on a person</th><th scope="col">Setup</th><th scope="col">Mail</th><th scope="col">Last heard</th></tr></thead><tbody>${g.rows.map((r) => row(r, now)).join('')}</tbody></table></section>`,
     )
     .join('')
   const machines = team.machines
@@ -63,9 +77,10 @@ export function renderTeam(team: Team, viewerName: string, version: string): str
     .join('')
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60">
-<title>JQ Deck: team</title><style>${STYLE}</style></head><body><main>
+<title>${t.needs_you > 0 ? `(${t.needs_you}) ` : ''}JQ Deck: team</title><link rel="icon" href="data:,"><style>${STYLE}</style></head><body><main>
 <div class="top"><div><h1>JQ Deck: team</h1><p class="head">${esc(team.headline)}</p></div><form method="post" action="/logout"><button>Sign out</button></form></div>
-<p class="mut">Read ${esc(team.generated_at)} for ${esc(viewerName)}${team.scoped ? ', who sees some repositories only' : ''}. Reloads every minute. Read-only: answer a session where it is running.</p>
+${known > 0 ? tiles : ''}
+<p class="mut">Read at ${esc(clock(team.generated_at))}, signed in as ${esc(viewerName)}${team.scoped ? ', who sees some repositories only' : ''}. Reloads every minute. Read-only: answer a session where it is running.</p>
 ${groups || '<p class="card pad mut">No repository to show.</p>'}
 <h2>Machines</h2>
 <div class="card"><ul>${machines || '<li class="mut">None yet. On each machine: <code>jq-deck --watch --exec "jq-deck-server send --url THIS-ADDRESS"</code></li>'}</ul></div>
@@ -76,13 +91,14 @@ ${groups || '<p class="card pad mut">No repository to show.</p>'}
 export function renderLogin(message: string | null): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JQ Deck: sign in</title><style>${STYLE}</style></head><body><main style="max-width:420px">
+<title>JQ Deck: sign in</title><link rel="icon" href="data:,"><style>${STYLE}</style></head><body><main style="max-width:420px">
 <h1>JQ Deck: team</h1>
+<p class="mut" style="font-size:14px;margin:4px 0 12px">Which Claude Code sessions are waiting on a person, across this team's machines.</p>
 <form class="card pad" method="post" action="/login">
 ${message ? `<p class="bad" role="alert">${esc(message)}</p>` : ''}
 <label for="token">Viewer token</label>
-<input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
-<p class="mut">Whoever runs this server gives you one (<code>jq-deck-server add-viewer</code>).</p>
-<button>Sign in</button>
+<input id="token" name="token" type="password" autocomplete="current-password" placeholder="jqv_..." aria-describedby="token-help" required autofocus>
+<p class="mut" id="token-help">It starts with <code>jqv_</code>. Whoever runs this server gives you one. A machine token (<code>jqm_</code>) does not sign in.</p>
+<button class="primary">Sign in</button>
 </form></main></body></html>`
 }
