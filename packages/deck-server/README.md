@@ -4,6 +4,10 @@ One page for a team: which Claude Code sessions are waiting on a person, on whos
 
 Each machine runs [jq-deck](../deck) and reports counts and scores for the repositories it chooses. This server keeps the latest report from each machine and shows them together. You host it yourself.
 
+![The JQ Deck team page: sessions waiting on a person across three machines, one card per repository with a row per machine.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck-server/docs/screenshot.png)
+
+*The data in the picture is made up.*
+
 ## What a machine sends
 
 Per repository: its name, its git remote (`host/owner/name`), how many sessions, how many are waiting on a person and since when, the setup score, and the unread mail count.

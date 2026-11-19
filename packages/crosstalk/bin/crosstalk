@@ -281,11 +281,21 @@ case "${1:-}" in
     # The recipient is in the filename because filenames must be unique ACROSS
     # inboxes: the same subject sent to several names in one second would otherwise
     # make identical filenames, and anything that copies the mailbox by filename breaks.
-    FILE="$ROOT/inbox/$TO/$STAMP-$TO-$SLUG.md"
+    # Two messages with one subject to one inbox in the same second (two replies
+    # to a board post, say) would get the same name, and the second would replace
+    # the first. So the name is claimed before it is used: creating the file fails
+    # if it exists, and then -2, -3 ... is tried. The archive is checked too, so a
+    # name is never reused after an ack.
+    NAME="$STAMP-$TO-$SLUG"; N=1
+    while [ -e "$ROOT/archive/$TO/$NAME.md" ] || ! ( set -C; : > "$ROOT/inbox/$TO/$NAME.md" ) 2>/dev/null; do
+      N=$((N + 1)); NAME="$STAMP-$TO-$SLUG-$N"
+      [ "$N" -le 99 ] || { echo "could not name the message: 99 with this subject were sent to $TO this second" >&2; exit 1; }
+    done
+    FILE="$ROOT/inbox/$TO/$NAME.md"
     # A thread is named after its first message: that file's name without .md. The
     # bare timestamp is not enough, because two messages sent in the same second
     # would share it. A reply copies the thread of the message it answers.
-    THREAD="$STAMP-$TO-$SLUG"; REPLY_TO=""
+    THREAD="$NAME"; REPLY_TO=""
     if [ -n "$RE" ]; then
       REPLY_TO=$(basename "$RE")
       THREAD=$(fm "$RE" thread)

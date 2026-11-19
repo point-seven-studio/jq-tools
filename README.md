@@ -23,6 +23,8 @@ npm run check    # typecheck, tests, build, and the bundle check
 
 Node 18 or later.
 
+The picture in each package's README is made from made-up data: `npm run build && node scripts/readme-pages.mjs OUT_DIR` writes the pages, and a browser at 1000px wide takes the picture.
+
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
