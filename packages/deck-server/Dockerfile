@@ -6,6 +6,8 @@
 # The data folder is /data: mount a volume there, or every restart forgets who
 # may report and who may look. The folder is made on first start.
 FROM node:22-alpine AS build
+# build.sh is a bash script, and this image has no bash.
+RUN apk add --no-cache bash
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY packages ./packages
