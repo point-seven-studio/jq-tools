@@ -8,6 +8,12 @@ const HELP = `JQ Deck ${VERSION}: one page for your Claude Code sessions, their 
 
   jq-deck                        open the page at http://127.0.0.1:${DEFAULT_PORT}
   jq-deck --json                 print the overview
+  jq-deck --watch --exec CMD     every interval, pipe a team report (JSON) to CMD:
+                                 counts and scores per repository, no paths, no
+                                 question text, no mail
+        --repos NAME,NAME        which repositories to report (required, or "report"
+                                 in the config file); --all-repos reports every one
+        --interval SECONDS       for --watch (default 60)
   jq-deck --mailbox DIR          the crosstalk mailbox to show (default: $CROSSTALK_DIR,
                                  or the nearest folder above you holding .crosstalk)
   jq-deck --questions DIR,DIR    show the question a waiting session asked, for
@@ -19,8 +25,8 @@ const HELP = `JQ Deck ${VERSION}: one page for your Claude Code sessions, their 
   jq-deck --port NUMBER
 
 It reads what jq-agents, jq-groundcrew and jq-crosstalk read, and writes nothing.
-The page is served to this machine only. Nothing leaves it unless you pass --probe
-(one timed connection).
+The page is served to this machine only. Nothing leaves it unless you pass --exec
+(your command gets the report) or --probe (one timed connection).
 
 Unofficial. Not affiliated with or endorsed by Anthropic.`
 

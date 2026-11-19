@@ -3,12 +3,12 @@
  * what they return to buildOverview(). Read-only: it opens the same files the
  * three tools open and writes nothing.
  */
-import { existsSync, readdirSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import path from 'path'
 import { snapshot, type CollectOptions, type Snapshot } from '@point-seven-studio/jq-agents'
 import { BOARD, readMailbox, waitingBoard } from '@point-seven-studio/jq-crosstalk'
 import { canRead, gather, runChecks, summarize } from '@point-seven-studio/jq-groundcrew'
-import { buildOverview, type Overview, type SetupResult } from './deck.js'
+import { buildOverview, originIn, type Overview, type SetupResult } from './deck.js'
 
 export interface DeckOptions extends CollectOptions {
   mailbox: string | null
@@ -29,6 +29,26 @@ export function checkSetup(tree: string): SetupResult {
     return { summary: summarize(runChecks(gather(tree).facts)) }
   } catch (e: any) {
     return { error: String(e?.message || e) }
+  }
+}
+
+/**
+ * The origin remote of a folder, read from its git config file. No git command
+ * is run. A worktree's .git is a file pointing at the real one; follow it.
+ */
+export function remoteOf(tree: string): string | null {
+  try {
+    let gitDir = path.join(tree, '.git')
+    if (statSync(gitDir).isFile()) {
+      const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(gitDir, 'utf8'))
+      if (!m) return null
+      gitDir = path.resolve(tree, m[1].trim())
+      const common = path.join(gitDir, 'commondir')
+      if (existsSync(common)) gitDir = path.resolve(gitDir, readFileSync(common, 'utf8').trim())
+    }
+    return originIn(readFileSync(path.join(gitDir, 'config'), 'utf8'))
+  } catch {
+    return null
   }
 }
 
@@ -57,5 +77,10 @@ export async function collectOverview(opts: DeckOptions): Promise<Overview> {
       mailNote = String(e?.message || e)
     }
   }
-  return buildOverview({ snapshot: snap, trees, setups, waiting, inboxes, mailbox: opts.mailbox, mailNote, names: opts.names })
+  const remotes = new Map<string, string>()
+  for (const t of trees) {
+    const remote = remoteOf(t)
+    if (remote) remotes.set(t, remote)
+  }
+  return buildOverview({ snapshot: snap, trees, setups, waiting, inboxes, mailbox: opts.mailbox, mailNote, names: opts.names, remotes })
 }

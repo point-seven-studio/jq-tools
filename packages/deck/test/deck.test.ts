@@ -8,9 +8,10 @@ import path from 'path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Snapshot } from '@point-seven-studio/jq-agents'
 import { waitingBoard, type Message } from '@point-seven-studio/jq-crosstalk'
-import { buildContext, handle, hostAllowed, parseArgs, type Context } from '../src/cli.js'
+import { buildContext, handle, hostAllowed, parseArgs, reportList, type Context } from '../src/cli.js'
 import { collectOverview } from '../src/collect.js'
-import { buildOverview, findMailbox, loadConfig, matchInbox, repoId, type Overview, type SetupResult } from '../src/deck.js'
+import { buildOverview, findMailbox, loadConfig, matchInbox, normalizeRemote, originIn, repoId, reportable, teamReport, type Overview, type SetupResult } from '../src/deck.js'
+import { remoteOf } from '../src/collect.js'
 import { pickRepo, renderShell } from '../src/page.js'
 
 const NOW = Date.parse('2026-11-18T12:00:00Z')
@@ -86,6 +87,74 @@ describe('buildOverview', () => {
   })
 })
 
+describe('the team report', () => {
+  it('reads an origin remote in any shape, and drops a user name or token', () => {
+    expect(normalizeRemote('git@github.com:acme/shop.git')).toBe('github.com/acme/shop')
+    expect(normalizeRemote('https://github.com/acme/shop')).toBe('github.com/acme/shop')
+    expect(normalizeRemote('https://dana:ghp_secret@GitHub.com/acme/shop.git')).toBe('github.com/acme/shop')
+    expect(normalizeRemote('ssh://git@host.example:2222/team/sub/shop.git')).toBe('host.example/team/sub/shop')
+    expect(normalizeRemote('/srv/git/shop.git')).toBeNull()
+    expect(originIn('[core]\n\tbare = false\n[remote "upstream"]\n\turl = git@github.com:other/shop.git\n[remote "origin"]\n\turl = git@github.com:acme/shop.git\n[branch "main"]\n\tremote = origin\n')).toBe('github.com/acme/shop')
+    expect(originIn('[core]\n\tbare = false\n')).toBeNull()
+  })
+  it('finds the remote of a folder and of a worktree, running no command', () => {
+    const repo = path.join(dir, 'shop')
+    mkdirSync(path.join(repo, '.git', 'worktrees', 'wt'), { recursive: true })
+    writeFileSync(path.join(repo, '.git', 'config'), '[remote "origin"]\n\turl = https://github.com/acme/shop.git\n')
+    writeFileSync(path.join(repo, '.git', 'worktrees', 'wt', 'commondir'), '../..\n')
+    const wt = path.join(dir, 'wt')
+    mkdirSync(wt)
+    writeFileSync(path.join(wt, '.git'), `gitdir: ${path.join(repo, '.git', 'worktrees', 'wt')}\n`)
+    expect(remoteOf(repo)).toBe('github.com/acme/shop')
+    expect(remoteOf(wt)).toBe('github.com/acme/shop')
+    expect(remoteOf(dir)).toBeNull()
+  })
+  it('carries counts and scores, and no path, question or message', () => {
+    const o = buildOverview({
+      snapshot: snap([session({ working_tree: '/Users/dana/code/shop', state: 'idle', waiting: true, blocked_question: 'Shall I drop the table?', question_allowed: true, last_activity_at: '2026-11-18T11:00:00Z' })]),
+      trees: ['/Users/dana/code/shop'],
+      setups: new Map<string, SetupResult>([['/Users/dana/code/shop', broken]]),
+      waiting: waitingBoard(mail('shop', 2), NOW),
+      inboxes: ['shop'],
+      mailbox: '/Users/dana/crosstalk',
+      remotes: new Map([['/Users/dana/code/shop', 'github.com/acme/shop']]),
+    })
+    const report = teamReport(o)
+    expect(report.repos).toEqual([{ name: 'shop', remote: 'github.com/acme/shop', sessions: 1, live: 0, needs_you: 1, abandoned: 0, waiting_since: '2026-11-18T11:00:00Z', last_activity_at: '2026-11-18T11:00:00Z', setup: { score: 67, fail: 2, warn: 1 }, unread: 2 }])
+    const text = JSON.stringify(report)
+    for (const secret of ['/Users/', 'dana', 'drop the table', 'crosstalk', 'Hi']) expect(text).not.toContain(secret)
+  })
+})
+
+describe('which repositories a machine reports', () => {
+  const o = buildOverview({
+    snapshot: snap([session({ working_tree: '/code/shop', product: 'shop' }), session({ session_id: 'z', working_tree: '/code/client-x', product: 'client-x' })]),
+    trees: ['/code/shop', '/code/client-x'],
+    setups: new Map(),
+    waiting: null,
+    mailbox: null,
+    remotes: new Map([['/code/shop', 'github.com/acme/shop']]),
+  })
+  it('reports only what is listed, by name, remote or folder', () => {
+    expect(teamReport(o, ['Shop']).repos.map((r) => r.name)).toEqual(['shop'])
+    expect(teamReport(o, ['github.com/acme/shop']).repos.map((r) => r.name)).toEqual(['shop'])
+    expect(teamReport(o, ['/code/client-x']).repos.map((r) => r.name)).toEqual(['client-x'])
+    expect(teamReport(o, ['nothing']).repos).toEqual([])
+    expect(JSON.stringify(teamReport(o, ['shop']))).not.toContain('client-x')
+    expect(teamReport(o, null).repos).toHaveLength(2)
+    expect(reportable({ name: 'shop', remote: null, tree: '/code/shop' }, ['', ' '])).toBe(false)
+  })
+  it('refuses to report with no list', () => {
+    const none = path.join(dir, 'none.json')
+    expect(() => buildContext(parseArgs(['--config', none, '--watch', '--exec', 'cat']), {}, dir, 't')).toThrow('which repositories')
+    expect(buildContext(parseArgs(['--config', none, '--watch', '--exec', 'cat', '--repos', 'shop,api']), {}, dir, 't').report).toEqual(['shop', 'api'])
+    expect(buildContext(parseArgs(['--config', none, '--watch', '--exec', 'cat', '--all-repos']), {}, dir, 't').report).toBeNull()
+    expect(reportList({ repos: null, allRepos: false }, ['docs'])).toEqual(['docs'])
+    expect(() => parseArgs(['--repos', 'shop'])).toThrow('--watch')
+    expect(() => parseArgs(['--watch', '--exec', 'cat', '--repos', 'a', '--all-repos'])).toThrow('not both')
+  })
+})
+
 describe('config and mailbox', () => {
   it('reads a config file, expands ~ and drops what is not a string', () => {
     const file = path.join(dir, 'config.json')
@@ -114,6 +183,9 @@ describe('config and mailbox', () => {
     expect(buildContext(parseArgs(['--config', none, '--questions', '/code/shop']), {}, dir, 't').deck.questionTrees).toEqual(['/code/shop'])
     expect(() => parseArgs(['--port', '0'])).toThrow('--port')
     expect(() => parseArgs(['--wat'])).toThrow('unknown option')
+    expect(() => parseArgs(['--watch'])).toThrow('--exec')
+    expect(() => parseArgs(['--exec', 'cat'])).toThrow('--watch')
+    expect(parseArgs(['--watch', '--exec', 'cat', '--interval', '30'])).toMatchObject({ watch: true, exec: 'cat', intervalS: 30 })
   })
 })
 
@@ -151,7 +223,7 @@ describe('the page', () => {
 
 describe('the request handler', () => {
   const tree = () => path.join(dir, 'proj')
-  const ctx = (over: Partial<Context['deck']> = {}): Context => ({ port: 4316, version: 't', probe: false, sample: false, deck: { mailbox: null, projectsDir: path.join(dir, 'projects'), sockDir: path.join(dir, 'socks'), now: NOW, machine: 'test-mac', ...over } })
+  const ctx = (over: Partial<Context['deck']> = {}): Context => ({ port: 4316, version: 't', probe: false, sample: false, report: null, deck: { mailbox: null, projectsDir: path.join(dir, 'projects'), sockDir: path.join(dir, 'socks'), now: NOW, machine: 'test-mac', ...over } })
   beforeEach(() => {
     mkdirSync(path.join(dir, 'projects', 'a'), { recursive: true })
     mkdirSync(path.join(dir, 'socks'))

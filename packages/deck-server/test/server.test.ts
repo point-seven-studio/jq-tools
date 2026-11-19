@@ -1,0 +1,255 @@
+/**
+ * The report rules, the store, the team rules and the HTTP handler. Every
+ * folder is made here and the clock is supplied.
+ */
+import { mkdtempSync, readFileSync, writeFileSync } from 'fs'
+import os from 'os'
+import path from 'path'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { parse } from '../src/cli.js'
+import { renderTeam } from '../src/page.js'
+import { sanitizeReport, type TeamReport } from '../src/report.js'
+import { reportUrl, send } from '../src/send.js'
+import { handle, startServer, type ServerContext } from '../src/server.js'
+import { addMachine, addViewer, initStore, machineFor, readConfig, readReports, remove, viewerFor } from '../src/store.js'
+import { buildTeam, duration, freshness, visible } from '../src/team.js'
+import type { StoredReport } from '../src/store.js'
+
+const NOW = Date.parse('2026-11-19T12:00:00Z')
+const repo = (over: object = {}) => ({ name: 'shop', remote: 'github.com/acme/shop', sessions: 2, live: 1, needs_you: 1, abandoned: 0, waiting_since: '2026-11-19T11:20:00.000Z', last_activity_at: '2026-11-19T11:59:00.000Z', setup: { score: 80, fail: 1, warn: 0 }, unread: 3, ...over })
+const report = (repos: object[] = [repo()]): TeamReport => ({ v: 1, generated_at: '2026-11-19T12:00:00.000Z', repos: repos as TeamReport['repos'] })
+const stored = (machine: string, who: string, minutesAgo: number, repos: object[]): StoredReport => ({ machine, who, received_at: new Date(NOW - minutesAgo * 60_000).toISOString(), report: report(repos) })
+
+let dir: string
+let ctx: ServerContext
+beforeEach(() => {
+  dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'jq-deck-server-')), 'data')
+  initStore(dir)
+  ctx = { dir, version: 't', secureCookie: true, now: () => NOW }
+})
+
+describe('sanitizeReport', () => {
+  it('keeps the fields of a report and drops everything else', () => {
+    const dirty = { ...report([{ ...repo(), tree: '/Users/dana/code/shop', blocked_question: 'Shall I drop the table?', inbox: 'shop' }]), machine: 'spoofed', mailbox: '/Users/dana/crosstalk' }
+    const clean = sanitizeReport(dirty)
+    expect(clean).toEqual(report())
+    expect(JSON.stringify(clean)).not.toMatch(/Users|drop the table|spoofed/)
+  })
+  it('drops a remote that is not host/owner/name, and keeps the row', () => {
+    expect(sanitizeReport(report([repo({ remote: 'https://token@github.com/acme/shop' })])).repos[0].remote).toBeNull()
+    expect(sanitizeReport(report([repo({ remote: '<script>' })])).repos[0].remote).toBeNull()
+  })
+  it('refuses what is not a report, with a reason', () => {
+    expect(() => sanitizeReport(null)).toThrow('JSON object')
+    expect(() => sanitizeReport({ v: 2 })).toThrow('version')
+    expect(() => sanitizeReport(report([repo({ name: '../etc/passwd' })]))).toThrow('no slash')
+    expect(() => sanitizeReport(report([repo({ name: 'a\nb' })]))).toThrow('name')
+    expect(() => sanitizeReport(report([repo({ sessions: -1 })]))).toThrow('sessions')
+    expect(() => sanitizeReport(report([repo({ needs_you: 1.5 })]))).toThrow('needs_you')
+    expect(() => sanitizeReport(report([repo({ setup: { score: 101, fail: 0, warn: 0 } })]))).toThrow('setup.score')
+    expect(() => sanitizeReport(report([repo({ waiting_since: 'yesterday' })]))).toThrow('waiting_since')
+    expect(() => sanitizeReport(report(Array.from({ length: 201 }, () => repo())))).toThrow('at most 200')
+  })
+  it('keeps unknown as unknown', () => {
+    const r = sanitizeReport(report([repo({ unread: null, setup: null, waiting_since: null })])).repos[0]
+    expect(r).toMatchObject({ unread: null, setup: null, waiting_since: null })
+  })
+})
+
+describe('the store', () => {
+  it('never keeps a token, and tells a machine from a viewer', () => {
+    const m = addMachine(dir, 'dana-laptop', 'Dana')
+    const v = addViewer(dir, 'lee', ['shop'])
+    const text = readFileSync(path.join(dir, 'config.json'), 'utf8')
+    expect(text).not.toContain(m)
+    expect(text).not.toContain(v)
+    const config = readConfig(dir)
+    expect(machineFor(config, m)).toMatchObject({ name: 'dana-laptop', who: 'Dana' })
+    expect(viewerFor(config, v)).toMatchObject({ name: 'lee', repos: ['shop'] })
+    // A machine token is not a viewer token, and the other way round.
+    expect(viewerFor(config, m)).toBeNull()
+    expect(machineFor(config, v)).toBeNull()
+    expect(machineFor(config, 'nope')).toBeNull()
+    expect(machineFor(config, '')).toBeNull()
+    expect(machineFor(config, undefined)).toBeNull()
+  })
+  it('refuses a bad or taken name, and a missing --who', () => {
+    addMachine(dir, 'box', 'Dana')
+    expect(() => addMachine(dir, 'box', 'Lee')).toThrow('in use')
+    expect(() => addViewer(dir, 'box')).toThrow('in use')
+    expect(() => addMachine(dir, '../x', 'Lee')).toThrow('a name is')
+    expect(() => addMachine(dir, 'ok', '  ')).toThrow('--who')
+    expect(() => initStore(dir)).toThrow('already')
+  })
+  it('stops a token working when its owner is removed, and forgets the report', () => {
+    const token = addMachine(dir, 'box', 'Dana')
+    expect(handle({ method: 'POST', path: '/report', authorization: `Bearer ${token}`, body: JSON.stringify(report()) }, ctx).status).toBe(204)
+    expect(readReports(dir, readConfig(dir))).toHaveLength(1)
+    expect(remove(dir, 'box')).toBe(true)
+    expect(remove(dir, 'box')).toBe(false)
+    expect(handle({ method: 'POST', path: '/report', authorization: `Bearer ${token}`, body: JSON.stringify(report()) }, ctx).status).toBe(401)
+    expect(readReports(dir, readConfig(dir))).toHaveLength(0)
+  })
+  it('skips a damaged report file', () => {
+    addMachine(dir, 'box', 'Dana')
+    writeFileSync(path.join(dir, 'reports', 'box.json'), '{half')
+    expect(readReports(dir, readConfig(dir))).toEqual([])
+  })
+})
+
+describe('buildTeam', () => {
+  it('groups one repository across machines, longest wait first', () => {
+    const team = buildTeam(
+      [
+        stored('dana-laptop', 'Dana', 1, [repo({ waiting_since: '2026-11-19T11:20:00Z' }), repo({ name: 'docs', remote: null, needs_you: 0, waiting_since: null })]),
+        stored('lee-desktop', 'Lee', 2, [repo({ name: 'shop-clone', needs_you: 2, waiting_since: '2026-11-19T09:00:00Z' })]),
+      ],
+      NOW,
+    )
+    expect(team.groups.map((g) => g.name)).toEqual(['shop', 'docs'])
+    expect(team.groups[0].rows.map((r) => [r.who, r.waiting_minutes])).toEqual([['Lee', 180], ['Dana', 40]])
+    expect(team.groups[0].needs_you).toBe(3)
+    expect(team.totals).toMatchObject({ needs_you: 3, sessions: 6, machines_fresh: 2 })
+    expect(team.headline).toBe('3 sessions are waiting on a person, on 2 machines. The longest has waited 3 hours: shop-clone, Lee.')
+  })
+  it('never counts a machine that has gone quiet, and hides a silent one', () => {
+    const team = buildTeam([stored('a', 'Dana', 1, [repo({ needs_you: 0, waiting_since: null })]), stored('b', 'Lee', 90, [repo({ needs_you: 4 })]), stored('c', 'Sam', 60 * 30, [repo({ name: 'old', remote: null })])], NOW)
+    expect(team.totals).toMatchObject({ needs_you: 0, sessions: 2, machines_fresh: 1, machines_quiet: 1, machines_silent: 1 })
+    expect(team.groups.map((g) => g.name)).toEqual(['shop'])
+    expect(team.groups[0].rows.find((r) => r.who === 'Lee')).toMatchObject({ freshness: 'quiet', waiting_minutes: null })
+    expect(team.headline).toBe('No session is waiting on a person: 2 sessions on 1 machine read. 2 machines have gone quiet and are not counted.')
+    expect(team.machines.map((m) => m.freshness)).toEqual(['fresh', 'quiet', 'silent'])
+  })
+  it('says so when nothing is current, and when nothing has reported', () => {
+    expect(buildTeam([], NOW).headline).toBe('No machine has reported yet.')
+    expect(buildTeam([stored('a', 'Dana', 30, [repo()])], NOW).headline).toBe('No machine has reported in the last 5 minutes (1 machine known), so nothing below is current.')
+  })
+  it('scopes before it counts, and does not list a machine with nothing to show', () => {
+    const reports = [stored('a', 'Dana', 1, [repo(), repo({ name: 'secret', remote: 'github.com/acme/secret', needs_you: 5 })]), stored('b', 'Lee', 1, [repo({ name: 'secret', remote: 'github.com/acme/secret', needs_you: 2 })])]
+    const scoped = buildTeam(reports, NOW, { repos: ['Shop'] })
+    expect(scoped.scoped).toBe(true)
+    expect(scoped.groups.map((g) => g.name)).toEqual(['shop'])
+    expect(scoped.totals).toMatchObject({ needs_you: 1, sessions: 2, machines_fresh: 1 })
+    expect(scoped.machines.map((m) => m.machine)).toEqual(['a'])
+    expect(JSON.stringify(scoped)).not.toMatch(/secret|Lee/)
+    expect(buildTeam(reports, NOW, { repos: ['github.com/acme/secret'] }).totals.needs_you).toBe(7)
+    expect(buildTeam(reports, NOW, { repos: ['nothing'] }).headline).toBe('No machine has reported a repository you can see.')
+    expect(visible(null, repo())).toBe(true)
+    expect(visible({ repos: [] }, repo())).toBe(true)
+  })
+  it('measures staleness and durations plainly', () => {
+    expect(freshness(new Date(NOW - 5 * 60_000).toISOString(), NOW).freshness).toBe('fresh')
+    expect(freshness(new Date(NOW - 6 * 60_000).toISOString(), NOW).freshness).toBe('quiet')
+    expect(freshness(new Date(NOW - 25 * 3_600_000).toISOString(), NOW).freshness).toBe('silent')
+    expect([0, 1, 59, 60, 150, 60 * 72].map(duration)).toEqual(['under a minute', '1 minute', '59 minutes', '1 hour', '2 hours', '3 days'])
+  })
+})
+
+describe('the HTTP handler', () => {
+  let machine: string
+  let viewer: string
+  beforeEach(() => {
+    machine = addMachine(dir, 'dana-laptop', 'Dana')
+    viewer = addViewer(dir, 'lee')
+  })
+  const post = (body: string, token = machine) => handle({ method: 'POST', path: '/report', authorization: `Bearer ${token}`, body }, ctx)
+
+  it('takes a report only from a machine token, and stores it under that machine', () => {
+    expect(post(JSON.stringify(report()), 'wrong').status).toBe(401)
+    expect(post(JSON.stringify(report()), viewer).status).toBe(401)
+    expect(handle({ method: 'POST', path: '/report', body: JSON.stringify(report()) }, ctx).status).toBe(401)
+    expect(post('{nope').status).toBe(400)
+    expect(post(JSON.stringify({ v: 1 })).status).toBe(400)
+    expect(post(JSON.stringify({ ...report(), machine: 'someone-else', who: 'Mallory' })).status).toBe(204)
+    expect(readReports(dir, readConfig(dir))[0]).toMatchObject({ machine: 'dana-laptop', who: 'Dana', received_at: new Date(NOW).toISOString() })
+  })
+
+  it('shows the board only to a viewer', () => {
+    post(JSON.stringify(report()))
+    expect(handle({ method: 'GET', path: '/', body: '' }, ctx)).toMatchObject({ status: 303, headers: { location: '/login' } })
+    expect(handle({ method: 'GET', path: '/', cookie: `jq_deck=${machine}`, body: '' }, ctx).status).toBe(303)
+    expect(handle({ method: 'GET', path: '/api/team', body: '' }, ctx).status).toBe(401)
+    expect(handle({ method: 'GET', path: '/api/team', authorization: `Bearer ${machine}`, body: '' }, ctx).status).toBe(401)
+    const page = handle({ method: 'GET', path: '/', cookie: `other=1; jq_deck=${viewer}`, body: '' }, ctx)
+    expect(page.status).toBe(200)
+    expect(page.body).toContain('1 session is waiting on a person, on 1 machine. The longest has waited 40 minutes: shop, Dana.')
+    const api = handle({ method: 'GET', path: '/api/team', authorization: `Bearer ${viewer}`, body: '' }, ctx)
+    expect(JSON.parse(api.body).totals.needs_you).toBe(1)
+  })
+
+  it('signs in with a viewer token, and marks the cookie', () => {
+    expect(handle({ method: 'GET', path: '/login', body: '' }, ctx).body).toContain('Viewer token')
+    const bad = handle({ method: 'POST', path: '/login', body: 'token=nope' }, ctx)
+    expect(bad.status).toBe(401)
+    expect(bad.headers['set-cookie']).toBeUndefined()
+    expect(handle({ method: 'POST', path: '/login', body: `token=${encodeURIComponent(machine)}` }, ctx).status).toBe(401)
+    const ok = handle({ method: 'POST', path: '/login', body: `token=${encodeURIComponent(viewer)}` }, ctx)
+    expect(ok.status).toBe(303)
+    expect(ok.headers['set-cookie']).toMatch(/^jq_deck=jqv_.+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=2592000; Secure$/)
+    expect(handle({ method: 'POST', path: '/login', body: `token=${viewer}` }, { ...ctx, secureCookie: false }).headers['set-cookie']).not.toContain('Secure')
+    expect(handle({ method: 'POST', path: '/logout', body: '' }, ctx).headers['set-cookie']).toContain('Max-Age=0')
+  })
+
+  it('answers a health check without the data folder, and nothing else unknown', () => {
+    expect(handle({ method: 'GET', path: '/healthz', body: '' }, { ...ctx, dir: '/nowhere' })).toMatchObject({ status: 200, body: 'ok' })
+    expect(handle({ method: 'GET', path: '/reports/dana-laptop.json', body: '' }, ctx).status).toBe(404)
+    expect(handle({ method: 'GET', path: '/config.json', body: '' }, ctx).status).toBe(404)
+    expect(handle({ method: 'DELETE', path: '/report', body: '' }, ctx).status).toBe(404)
+  })
+
+  it('escapes what a machine sends, and loads nothing', () => {
+    post(JSON.stringify(report([repo({ name: '<img src=x onerror=alert(1)>', remote: null })])))
+    const page = handle({ method: 'GET', path: '/', cookie: `jq_deck=${viewer}`, body: '' }, ctx).body
+    expect(page).not.toContain('<img')
+    expect(page).toContain('&lt;img')
+    expect(page).not.toMatch(/<script|https?:\/\//)
+    expect(renderTeam(buildTeam([], NOW), 'lee', 't')).toContain('None yet')
+  })
+
+  it('works over a real socket, with its headers and its size limit', async () => {
+    const server = startServer({ ...ctx, now: undefined }, 0, '127.0.0.1')
+    await new Promise((r) => server.once('listening', r))
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+    try {
+      await send(base, machine, JSON.stringify({ ...report(), extra: '/Users/dana' }))
+      const res = await fetch(`${base}/api/team`, { headers: { authorization: `Bearer ${viewer}` } })
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).toBe('no-store')
+      expect(res.headers.get('x-frame-options')).toBe('DENY')
+      expect(res.headers.get('content-security-policy')).toContain("default-src 'none'")
+      expect((await res.json()).machines).toHaveLength(1)
+      const big = await fetch(`${base}/report`, { method: 'POST', headers: { authorization: `Bearer ${machine}` }, body: 'x'.repeat(300 * 1024) })
+      expect(big.status).toBe(413)
+      await expect(send(base, 'jqm_wrong', JSON.stringify(report()))).rejects.toThrow('401')
+    } finally {
+      server.close()
+    }
+  })
+})
+
+describe('send and the command line', () => {
+  it('refuses plain http off this machine, credentials in the address, and a missing token', async () => {
+    expect(reportUrl('https://deck.example.com/team/').href).toBe('https://deck.example.com/report')
+    expect(reportUrl('http://127.0.0.1:4320').href).toBe('http://127.0.0.1:4320/report')
+    expect(() => reportUrl('http://deck.example.com')).toThrow('https')
+    expect(() => reportUrl('https://user:pw@deck.example.com')).toThrow('user name')
+    expect(() => reportUrl('deck')).toThrow('not an address')
+    await expect(send('https://deck.example.com', undefined, '{}')).rejects.toThrow('JQ_DECK_TOKEN')
+  })
+  it('sends only the fields of a report', async () => {
+    let sent: any
+    const fake = (async (url: URL, init: RequestInit) => {
+      sent = { url: url.href, init }
+      return new Response(null, { status: 204 })
+    }) as unknown as typeof fetch
+    await send('https://deck.example.com', 'jqm_t', JSON.stringify({ ...report(), headline: 'x', mailbox: '/Users/dana/crosstalk' }), fake)
+    expect(sent.url).toBe('https://deck.example.com/report')
+    expect(JSON.parse(sent.init.body)).toEqual(report())
+    expect(sent.init.headers.authorization).toBe('Bearer jqm_t')
+  })
+  it('parses commands', () => {
+    expect(parse(['add-viewer', 'lee', '--repos', 'shop,api'])).toMatchObject({ command: 'add-viewer', positional: ['lee'], options: { '--repos': 'shop,api' } })
+    expect(() => parse(['serve', '--port'])).toThrow('--port needs a value')
+    expect(() => parse(['serve', '--wat'])).toThrow('unknown option')
+  })
+})
