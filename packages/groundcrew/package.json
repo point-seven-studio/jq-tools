@@ -1,6 +1,6 @@
 {
   "name": "@point-seven-studio/jq-groundcrew",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The setup check for Claude Code: what loads into every session, what runs automatically, and which guardrails are on. Runs on your machine and sends nothing anywhere. Unofficial; not affiliated with or endorsed by Anthropic.",
   "bin": {
     "jq-groundcrew": "dist/groundcrew.mjs"
@@ -8,6 +8,8 @@
   "type": "module",
   "files": [
     "dist/groundcrew.mjs",
+    "dist/index.mjs",
+    "dist/types",
     "README.md",
     "LICENSE",
     "NOTICE"
@@ -48,5 +50,12 @@
   "homepage": "https://github.com/point-seven-studio/jq-tools/tree/main/packages/groundcrew#readme",
   "bugs": {
     "url": "https://github.com/point-seven-studio/jq-tools/issues"
-  }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "types": "./dist/types/index.d.ts"
 }

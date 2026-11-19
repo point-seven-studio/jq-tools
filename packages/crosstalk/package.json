@@ -1,18 +1,22 @@
 {
   "name": "@point-seven-studio/jq-crosstalk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A file mailbox for agent sessions that work side by side: briefs, questions, threads, and a shared board for questions anyone may answer. Plain files on your machine; sends nothing anywhere.",
   "bin": {
     "crosstalk": "bin/crosstalk"
   },
   "type": "module",
   "exports": {
-    ".": "./dist/index.mjs"
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
   },
   "files": [
     "bin/crosstalk",
     "dist/view.mjs",
     "dist/index.mjs",
+    "dist/types",
     "README.md",
     "LICENSE",
     "NOTICE"
@@ -57,5 +61,6 @@
   "homepage": "https://github.com/point-seven-studio/jq-tools/tree/main/packages/crosstalk#readme",
   "bugs": {
     "url": "https://github.com/point-seven-studio/jq-tools/issues"
-  }
+  },
+  "types": "./dist/types/index.d.ts"
 }
