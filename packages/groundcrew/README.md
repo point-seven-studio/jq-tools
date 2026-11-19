@@ -37,6 +37,19 @@ Pin the version, so a new check cannot fail your build overnight. Running it onl
 
 Not every check means something in CI. A fresh clone has no `.env` file, because those are ignored by git, so the secrets check passes there whether or not a rule protects them. Run that one on a developer's machine. In CI the useful checks are the ones about files in the repository: `CLAUDE.md` growing past its target, a hook being removed, and a rule that approves every command.
 
+## As a library
+
+From 0.1.2 the checks can be run from your own code:
+
+```js
+import { gather, runChecks, summarize } from '@point-seven-studio/jq-groundcrew'
+
+const checks = runChecks(gather(process.cwd()).facts)
+console.log(summarize(checks))
+```
+
+`boardSummary(checks)` returns only the score, the counts and each check's id, title and status: the part that is safe to send to a team board, because it names none of your files.
+
 ## What it checks
 
 **Setup: what loads into every session, and what runs without being asked**

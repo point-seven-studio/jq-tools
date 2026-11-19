@@ -13,6 +13,11 @@ for entry in main:view index:index; do
 done
 echo "built $HERE/dist (view.mjs $(wc -c < "$HERE/dist/view.mjs" | tr -d ' ') bytes)"
 
+# Type declarations, so a TypeScript project can import the library.
+rm -rf "$HERE/dist/types"
+npx --no-install tsc -p "$HERE/tsconfig.build.json"
+[ -f "$HERE/dist/types/index.d.ts" ] || { echo "error: no type declarations were written" >&2; exit 1; }
+
 if [ "${1:-}" = "--check" ]; then
   # The package promises plain files on your machine. Fail if a bundle or the tool
   # names a database, an env loader or an outbound call.

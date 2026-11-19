@@ -15,6 +15,11 @@ npx --no-install esbuild "$HERE/src/index.ts" --bundle --platform=node --target=
 chmod +x "$HERE/dist/jq-agents.mjs"
 echo "built $HERE/dist (version $VERSION, $(wc -c < "$HERE/dist/jq-agents.mjs" | tr -d ' ') bytes)"
 
+# Type declarations, so a TypeScript project can import the library.
+rm -rf "$HERE/dist/types"
+npx --no-install tsc -p "$HERE/tsconfig.build.json"
+[ -f "$HERE/dist/types/index.d.ts" ] || { echo "error: no type declarations were written" >&2; exit 1; }
+
 if [ "${1:-}" = "--check" ]; then
   # No database client and no env loader, ever.
   if grep -n -E "@supabase|createClient\(|dotenv|XMLHttpRequest|WebSocket|sendBeacon|fetch\(" "$HERE/dist/jq-agents.mjs" "$HERE/dist/index.mjs"; then
