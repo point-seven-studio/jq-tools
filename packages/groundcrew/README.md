@@ -104,8 +104,19 @@ A suggested prompt asks Claude Code to show its plan or its diff before it chang
 - It checks setup. It does not look at how a session went.
 - The checks follow the Claude Code documentation as it stood on 2026-11-14. The documentation can change.
 
+## Related tools
+
+- [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck): all of these on one local page, from one command.
+- [jq-deck-server](https://www.npmjs.com/package/@point-seven-studio/jq-deck-server): the same view for a team, across machines.
+- [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents): a board of every Claude Code session on your machine.
+- [jq-crosstalk](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk): a file mailbox between agent sessions.
+
+Each one works alone. [Why we built them](https://www.hivejournal.com/blog/jq-tools-one-command).
+
+For a team that wants the board across machines without running a server, there is a [waitlist for a hosted board](https://www.hivejournal.com/jq-deck#hosted).
+
 ## About
 
-Made by Point Seven Studio. Unofficial: not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are Anthropic's names for their products.
+Made by [Point Seven Studio](https://www.hivejournal.com/point-seven-studio). Unofficial: not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are Anthropic's names for their products.
 
 Licence: Apache-2.0. See the LICENSE file.

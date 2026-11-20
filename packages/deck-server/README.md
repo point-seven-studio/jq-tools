@@ -2,11 +2,17 @@
 
 One page for a team: which Claude Code sessions are waiting on a person, on whose machine, and for how long.
 
-Each machine runs [jq-deck](../deck) and reports counts and scores for the repositories it chooses. This server keeps the latest report from each machine and shows them together. You host it yourself.
+Each machine runs [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck) and reports counts and scores for the repositories it chooses. This server keeps the latest report from each machine and shows them together. You host it yourself, so your team's data stays on your own systems.
 
 ![The JQ Deck team page: sessions waiting on a person across three machines, one card per repository with a row per machine.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck-server/docs/screenshot.png)
 
 *The data in the picture is made up.*
+
+## Hosted for you
+
+Not available yet. Point Seven Studio runs one board, for its own team. Hosting one for another team needs things this server does not have: more than one team on a server, sign-in by account, history and alerts.
+
+If you would rather not run a server, [join the waitlist](https://www.hivejournal.com/jq-deck#hosted). You get one email if hosting opens, and nothing else. This package stays open source either way.
 
 ## What a machine sends
 
@@ -94,6 +100,15 @@ import { handle, buildTeam, readReports, readConfig, sanitizeReport } from '@poi
 - **A repository name is itself information.** That is why a machine must list what it reports.
 - A git remote written with an SSH host alias (`github.com-work:acme/shop`) is sent as written, so that repository will not group with the same one cloned without the alias.
 
+## Related tools
+
+- [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck): all of these on one local page, from one command.
+- [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents): a board of every Claude Code session on your machine.
+- [jq-groundcrew](https://www.npmjs.com/package/@point-seven-studio/jq-groundcrew): a setup check for Claude Code.
+- [jq-crosstalk](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk): a file mailbox between agent sessions.
+
+Each one works alone. [Why we built them](https://www.hivejournal.com/blog/jq-tools-one-command).
+
 ## About
 
-Made by Point Seven Studio. Licence: Apache-2.0. Unofficial: not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are Anthropic's names for their products.
+Made by [Point Seven Studio](https://www.hivejournal.com/point-seven-studio). Licence: Apache-2.0. Unofficial: not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are Anthropic's names for their products.

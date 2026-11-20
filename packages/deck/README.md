@@ -2,7 +2,7 @@
 
 One command, one local page: every Claude Code session on your machine, the setup check for each repository, and the mailbox between sessions.
 
-It is [jq-agents](../agents), [jq-groundcrew](../groundcrew) and [jq-crosstalk](../crosstalk) behind one page. It reads what they read and writes nothing.
+It is [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents), [jq-groundcrew](https://www.npmjs.com/package/@point-seven-studio/jq-groundcrew) and [jq-crosstalk](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk) behind one page. It reads what they read and writes nothing.
 
 ![The JQ Deck overview: one row per repository with its sessions, setup score and unread mail.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck/docs/screenshot.png)
 
@@ -67,7 +67,7 @@ export JQ_DECK_TOKEN=jqm_...
 npx @point-seven-studio/jq-deck --watch --repos shop,api --exec "jq-deck-server send --url https://deck.example.com"
 ```
 
-Every interval (60 seconds, or `--interval`), your command receives one JSON report on stdin. [jq-deck-server](../deck-server) is a server that takes them; any command works.
+Every interval (60 seconds, or `--interval`), your command receives one JSON report on stdin. [jq-deck-server](https://www.npmjs.com/package/@point-seven-studio/jq-deck-server) is a server that takes them; any command works.
 
 - **You list what is reported.** `--repos` (or `report` in the config file) names the repositories, by folder name, remote or path. Nothing else is in the report, not even as a count. `--all-repos` reports every one. With neither, `--watch` refuses to start.
 - **A report is counts and scores:** per repository its name, git remote, session counts, how long the longest-waiting session has waited, the setup score and the unread count. No folder path, no message, no file name.
@@ -85,10 +85,21 @@ console.log(overview.headline)
 
 ## Limits
 
-- **One machine.** The page shows your own account's sessions on this machine. For a view across a team's machines, report to [jq-deck-server](../deck-server).
+- **One machine.** The page shows your own account's sessions on this machine. For a view across a team's machines, report to [jq-deck-server](https://www.npmjs.com/package/@point-seven-studio/jq-deck-server).
 - Everything each tool lists as a limit applies here: jq-agents depends on Claude Code internals and samples resources on macOS only; a mailbox has no access control.
 - Every page load reads again. With many repositories the Overview runs the setup check on each, which takes a moment.
 
+## Related tools
+
+- [jq-deck-server](https://www.npmjs.com/package/@point-seven-studio/jq-deck-server): the same view for a team, across machines.
+- [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents): a board of every Claude Code session on your machine.
+- [jq-groundcrew](https://www.npmjs.com/package/@point-seven-studio/jq-groundcrew): a setup check for Claude Code.
+- [jq-crosstalk](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk): a file mailbox between agent sessions.
+
+Each one works alone. [Why we built them](https://www.hivejournal.com/blog/jq-tools-one-command).
+
+For a team that wants the board across machines without running a server, there is a [waitlist for a hosted board](https://www.hivejournal.com/jq-deck#hosted).
+
 ## About
 
-Made by Point Seven Studio. Licence: Apache-2.0. Unofficial: not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are Anthropic's names for their products.
+Made by [Point Seven Studio](https://www.hivejournal.com/point-seven-studio). Licence: Apache-2.0. Unofficial: not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are Anthropic's names for their products.
