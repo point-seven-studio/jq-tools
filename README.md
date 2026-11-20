@@ -12,7 +12,7 @@ Open tools for people who work with coding agents, from [Point Seven Studio](htt
 | [`jq-deck-server`](packages/deck-server) | A small server you host for a team: each machine reports counts and scores for the repositories it lists, and one page shows what is waiting on a person, on whose machine, and for how long. | `npx @point-seven-studio/jq-deck-server --help` |
 | [`jq-agents`](packages/agents) | A local, read-only board of every Claude Code session on your machine: what each is doing and which are waiting on a person. | `npx @point-seven-studio/jq-agents` |
 
-On npm the packages are under the `@point-seven-studio` scope. The tools run on your own machine and store nothing. `jq-deck-server` is the one exception: you host it, and it keeps the latest report from each machine as files in one folder. A board hosted by us is not part of this repository.
+On npm the packages are under the `@point-seven-studio` scope. The tools run on your own machine and store nothing. `jq-deck-server` is the one exception: you host it, and it keeps the latest report from each machine as files in one folder. We do not host a board for other teams yet; there is a [waitlist](https://www.hivejournal.com/jq-deck#hosted) for one.
 
 ## Develop
 

@@ -122,6 +122,17 @@ The body, in markdown.
 - No access control. Anyone who can write to the folder can send as any name.
 - Threads are exact for mail sent with this tool. For hand-written mail they are worked out from citations and subjects, which is a guess.
 
+## Related tools
+
+- [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck): all of these on one local page, from one command.
+- [jq-deck-server](https://www.npmjs.com/package/@point-seven-studio/jq-deck-server): the same view for a team, across machines.
+- [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents): a board of every Claude Code session on your machine.
+- [jq-groundcrew](https://www.npmjs.com/package/@point-seven-studio/jq-groundcrew): a setup check for Claude Code.
+
+Each one works alone. [Why we built them](https://www.hivejournal.com/blog/jq-tools-one-command).
+
+For a team that wants the board across machines without running a server, there is a [waitlist for a hosted board](https://www.hivejournal.com/jq-deck#hosted).
+
 ## About
 
-Made by Point Seven Studio. Licence: Apache-2.0.
+Made by [Point Seven Studio](https://www.hivejournal.com/point-seven-studio). Licence: Apache-2.0.
