@@ -1,6 +1,6 @@
 {
   "name": "@point-seven-studio/jq-groundcrew",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "The setup check for Claude Code: what loads into every session, what runs automatically, and which guardrails are on. Runs on your machine and sends nothing anywhere. Unofficial; not affiliated with or endorsed by Anthropic.",
   "bin": {
     "jq-groundcrew": "dist/groundcrew.mjs"

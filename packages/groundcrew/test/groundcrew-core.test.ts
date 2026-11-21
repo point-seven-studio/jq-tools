@@ -5,6 +5,7 @@
  * plain static-import test.
  */
 import { describe, expect, it, test } from 'vitest'
+import { commandStart, findRestrictedCommands, proseFindings, ruleCovers } from '../src/groundcrew-core.js'
 import { allowsEveryCommand, boardSummary, deniesSecrets, LAYER_OF, LAYERS, layerSummary, looksLikeACheck, runChecks, summarize, type SettingsFile, type SetupFacts } from '../src/groundcrew-core.js'
 import { renderPage } from '../src/groundcrew-page.js'
 
@@ -198,6 +199,83 @@ describe('summary', () => {
     for (const check of runChecks(facts({ legacyCommands: 3, autoMemoryIndex: { label: 'MEMORY.md', lines: 1, bytes: 1 } }))) {
       expect(check.source).toMatch(/^https:\/\/code\.claude\.com\/docs\/en\/[a-z-]+\.md$/)
     }
+  })
+})
+
+describe('rules written in the instructions', () => {
+  const found = (text: string) => findRestrictedCommands(text, 'CLAUDE.md').map((r) => `${r.kind}:${r.command}@${r.line}`)
+  test('reads the start of a command and nothing that is not one', () => {
+    expect(['git push origin main', 'gh pr merge <#> --squash', 'git reset --hard origin/main', '$ rm -rf build/', 'npm run check'].map(commandStart)).toEqual([
+      'git push origin',
+      'gh pr merge',
+      'git reset --hard',
+      'rm -rf',
+      'npm run check',
+    ])
+    expect(['main', 'CLAUDE.md', '--unsafe-fixes', 'print', 'apps/backend'].map(commandStart)).toEqual(['', '', '', '', ''])
+  })
+  test('finds a forbidden command after the forbidding words, in the same sentence', () => {
+    expect(found('All tasks run through `npx nx`. Never call `uv run` or `tsc`/`eslint` directly.')).toEqual(['never:uv run@1', 'never:tsc@1', 'never:eslint@1'])
+    expect(found('Use `npm run check` before a PR.')).toEqual([])
+    expect(found('Never push to `main` directly.')).toEqual([])
+  })
+  test('finds a command named without code marks', () => {
+    expect(found('Do not git push without asking.')).toEqual(['ask:git push@1'])
+    expect(found('- never rm -rf anything outside the project')).toEqual(['never:rm -rf@1'])
+  })
+  test('a list under a heading that restricts takes the kind of the heading', () => {
+    const text = ['## Ask first, every time', '', '- **Any `git push`**, on any branch.', '- **Opening a PR**: `gh pr create` or a merge.', '', '## Tooling', '', '- `git status` is fine.'].join('\n')
+    expect(found(text)).toEqual(['ask:git push@3', 'ask:gh pr create@4'])
+  })
+  test('a paragraph under such a heading is not taken, because it names what to use instead', () => {
+    const text = ['## Never push to main directly', '', 'Open a pull request, then `gh pr merge --squash` lands it.', '', '- `git push origin main`'].join('\n')
+    expect(found(text)).toEqual(['never:git push origin@5'])
+  })
+  test('joins a wrapped list item, and skips fenced code', () => {
+    const text = ['- Before any destructive reset, stash first. Never run', '  `git reset --hard` with uncommitted work.', '', '```bash', 'git push origin main  # never do this', '```'].join('\n')
+    expect(found(text)).toEqual(['never:git reset --hard@1'])
+  })
+  test('lists a command once, at its first line', () => {
+    expect(found('Never `git push`.\n\nReally, never `git push`.')).toEqual(['never:git push@1'])
+  })
+  test('a rule covers a command by prefix, in both documented spellings', () => {
+    const rules = ['Bash(git push *)', 'Bash(git push:*)', 'Bash(git push)', 'Bash(git *)', 'Bash', 'Bash(*)', 'Bash(git push --force *)']
+    expect(rules.map((r) => ruleCovers(r, 'git push'))).toEqual([true, true, true, true, true, true, false])
+    expect(['Bash(git pull *)', 'Read(git push)', 'Bash(gitx *)'].map((r) => ruleCovers(r, 'git push'))).toEqual([false, false, false])
+    expect(ruleCovers('Bash(ls *)', 'lsof')).toBe(false)
+  })
+
+  const restricted = [
+    { file: 'CLAUDE.md', line: 4, kind: 'ask' as const, command: 'git push' },
+    { file: 'CLAUDE.md', line: 9, kind: 'never' as const, command: 'rm -rf' },
+  ]
+  const states = (s: Partial<SettingsFile>) => proseFindings(facts({ restricted, settings: [settings(s)] })).map((f) => f.state)
+  test('an ask line is held by the default prompt; a never line needs a deny rule', () => {
+    expect(states({})).toEqual(['prompt', 'open'])
+    expect(states({ ask: ['Bash(git push *)'], deny: ['Bash(rm -rf *)'] })).toEqual(['enforced', 'enforced'])
+    expect(states({ ask: ['Bash(rm -rf *)'] })).toEqual(['prompt', 'open']) // asking is not never
+  })
+  test('an allow rule or a no-prompt mode contradicts the instructions', () => {
+    expect(states({ allow: ['Bash(git:*)'] })).toEqual(['allowed', 'open'])
+    expect(states({ defaultMode: 'bypassPermissions' })).toEqual(['allowed', 'allowed'])
+    expect(states({ allow: ['Bash(git:*)'], deny: ['Bash(git push *)'] })).toEqual(['enforced', 'open']) // deny is checked first
+  })
+  const only = (s: Partial<SettingsFile>, r = restricted) => runChecks(facts({ restricted: r, settings: [settings(s)] })).find((c) => c.id === 'prose-rules')!
+  test('the check says look, names the lines, and gives a prompt that asks to confirm them', () => {
+    const check = only({ allow: ['Bash(git:*)'] })
+    expect(check.status).toBe('warn')
+    expect(check.detail).toContain('"git push" (ask first, CLAUDE.md line 4)')
+    expect(check.detail).toContain('"rm -rf" (never, CLAUDE.md line 9)')
+    expect(check.prompt).toContain('tell me if it really restricts that command')
+    expect(check.prompt).toContain('Show me the diff before you save it')
+  })
+  test('passes when every restricted command is enforced or only waits on the default prompt', () => {
+    expect(only({ deny: ['Bash(rm -rf *)'] }).status).toBe('pass')
+    expect(only({ deny: ['Bash(rm -rf *)'] }).prompt).toBe('')
+    expect(only({}, []).status).toBe('info')
+  })
+  test('sends none of what it found to a team board', () => {
+    expect(JSON.stringify(boardSummary(runChecks(facts({ restricted, settings: [settings({})] }))))).not.toContain('git push')
   })
 })
 

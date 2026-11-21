@@ -65,6 +65,18 @@ export interface SetupFacts {
   mcpServers: { project: number; user: number }
   /** Paths, from the project root, of files that usually hold secrets, such as "apps/api/.env". Names only, never contents. */
   secretFiles: string[]
+  /** Commands the instruction files say never to run, or to ask about first. Absent when a caller did not look. */
+  restricted?: RestrictedCommand[]
+}
+
+export interface RestrictedCommand {
+  /** The instruction file, as a label a person can read. */
+  file: string
+  line: number
+  /** "never": the text forbids the command. "ask": the text says to ask a person first. */
+  kind: 'never' | 'ask'
+  /** The start of the command as written, such as "git push" or "rm -rf". */
+  command: string
 }
 
 export interface Check {
@@ -104,6 +116,188 @@ export function deniesSecrets(rule: string): boolean {
 /** An allow rule that approves every shell command. */
 export function allowsEveryCommand(rule: string): boolean {
   return /^Bash(\(\s*(\*|:\*|\*\*)?\s*\))?$/.test(rule.trim())
+}
+
+/**
+ * Programs whose name at the start of a code span marks the span as a command. A span such as
+ * `main` or `CLAUDE.md` is not one, and without this list "never push to `main`" would be read
+ * as a rule about a command called main.
+ */
+const COMMAND_HEADS = new Set(
+  (
+    'git gh npm npx pnpm yarn bun node deno python python3 pip pip3 uv poetry cargo go make docker kubectl helm terraform aws gcloud az ' +
+    'psql mysql sqlite3 redis-cli curl wget ssh scp rsync rm mv cp chmod chown sudo kill pkill brew apt railway vercel netlify fly ' +
+    'heroku firebase wrangler tsc eslint ruff prettier dprint jest vitest pytest nx turbo gradle mvn dotnet rails rake bundle composer php launchctl systemctl'
+  ).split(' '),
+)
+const NEVER_WORDS = /\b(never|do not|don['’]t|must not|mustn['’]t|not allowed|forbidden|prohibited)\b/i
+const ASK_WORDS =
+  /\bask\b[^.]{0,40}\b(first|before)\b|\bgo-ahead\b|\bwithout (asking|approval|permission|confirmation)\b|\b(needs?|requires?|get|wait for) [^.]{0,30}\b(approval|confirmation|sign-off|say-so)\b|\bconfirm (first|before)\b/i
+/** Commands people name without code marks. Kept short on purpose: each one is unambiguous. */
+const BARE_COMMANDS = /\b(git (?:push|reset --hard|reset|rebase|merge|commit|clean|stash)|gh (?:pr|issue|release|repo) [a-z]+|npm publish|rm -rf)\b/g
+
+const restrictionKind = (text: string): RestrictedCommand['kind'] | null => (ASK_WORDS.test(text) ? 'ask' : NEVER_WORDS.test(text) ? 'never' : null)
+
+/** The start of a command: its program and up to two more plain words or flags. "" when the text is not a command. */
+export function commandStart(span: string): string {
+  const words = span.trim().replace(/^\$\s+/, '').split(/\s+/)
+  if (!COMMAND_HEADS.has(words[0])) return ''
+  const kept = [words[0]]
+  for (const word of words.slice(1, 3)) {
+    if (!/^(--?[a-z][a-z-]*|[a-z0-9][a-z0-9:_-]*)$/i.test(word)) break
+    kept.push(word)
+  }
+  return kept.join(' ')
+}
+
+/**
+ * Find the commands an instruction file restricts. It reads a paragraph or a list item at a
+ * time. Within one, a command counts when it comes after the restricting words in the same
+ * sentence ("never run `git push`"), or anywhere in a list item under a heading that restricts
+ * ("## Ask first" followed by a list). A plain paragraph under such a heading is not taken: it
+ * usually explains, and names the commands to use instead. Fenced code is skipped too.
+ *
+ * This reads words, not meaning. It misses a rule with no command in it ("never push to
+ * main"), and it can pick up a command that a sentence only mentions. The check that uses it
+ * is therefore a "look", never a "fix".
+ */
+export function findRestrictedCommands(text: string, file: string): RestrictedCommand[] {
+  const found: RestrictedCommand[] = []
+  const seen = new Set<string>()
+  const add = (kind: RestrictedCommand['kind'], command: string, line: number) => {
+    if (!command || seen.has(command)) return
+    seen.add(command)
+    found.push({ file, line, kind, command })
+  }
+  const commandsIn = (part: string): string[] => {
+    const spans = [...part.matchAll(/`([^`]+)`/g)].flatMap((m) => m[1].split('/').map(commandStart))
+    const bare = [...part.replace(/`[^`]*`/g, ' ').matchAll(BARE_COMMANDS)].map((m) => m[1])
+    return [...spans, ...bare].filter(Boolean)
+  }
+  const readBlock = (block: string, line: number, inherited: RestrictedCommand['kind'] | null) => {
+    let matched = false
+    for (const sentence of block.split(/(?<=[.!?:])\s+|\s[—–]\s|;\s/)) {
+      const kind = restrictionKind(sentence)
+      if (!kind) continue
+      matched = true
+      const at = sentence.search(kind === 'ask' ? ASK_WORDS : NEVER_WORDS)
+      // "ask first" often follows the command ("`git push`: ask first"), so an ask sentence is read whole.
+      for (const command of commandsIn(kind === 'ask' ? sentence : sentence.slice(at))) add(kind, command, line)
+    }
+    if (!matched && inherited) for (const command of commandsIn(block)) add(inherited, command, line)
+  }
+
+  let headingKind: RestrictedCommand['kind'] | null = null
+  let block = ''
+  let blockLine = 0
+  let blockIsItem = false
+  let fenced = false
+  const flush = () => {
+    if (block) readBlock(block, blockLine, blockIsItem ? headingKind : null)
+    block = ''
+  }
+  text.split('\n').forEach((raw, index) => {
+    if (/^\s*(```|~~~)/.test(raw)) {
+      flush()
+      fenced = !fenced
+      return
+    }
+    if (fenced) return
+    if (/^#{1,6}\s/.test(raw)) {
+      flush()
+      headingKind = restrictionKind(raw)
+      return
+    }
+    if (!raw.trim()) return flush()
+    const startsItem = /^\s*([-*+]|\d+[.)])\s/.test(raw) || /^\s*\|/.test(raw)
+    if (startsItem) flush()
+    if (!block) {
+      blockLine = index + 1
+      blockIsItem = startsItem
+    }
+    block += (block ? ' ' : '') + raw.trim()
+  })
+  flush()
+  return found
+}
+
+/**
+ * Whether a permission rule applies to a command that starts this way. Bare `Bash` and
+ * `Bash(*)` cover everything. A `*` matches any text and a trailing `:*` is the same as ` *`,
+ * as the docs say.
+ */
+export function ruleCovers(rule: string, command: string): boolean {
+  const trimmed = rule.trim()
+  if (allowsEveryCommand(trimmed)) return true
+  const inner = /^Bash\((.*)\)$/.exec(trimmed)?.[1]
+  if (inner === undefined) return false
+  const pattern = inner.replace(/:\*$/, ' *').trim()
+  const regex = new RegExp('^' + pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$')
+  return regex.test(command) || regex.test(`${command} x`)
+}
+
+/** Modes in which a command that no rule names runs without a prompt. */
+const NO_PROMPT_MODES = new Set(['bypassPermissions', 'auto'])
+
+export interface ProseFinding extends RestrictedCommand {
+  /**
+   * "enforced": a deny rule covers it, or an ask rule for an ask line. "allowed": nothing
+   * enforces it and an allow rule or the permission mode lets it run unasked. "prompt": an ask
+   * line that only the default prompt holds. "open": a never line with no deny rule.
+   */
+  state: 'enforced' | 'allowed' | 'prompt' | 'open'
+}
+
+export function proseFindings(facts: SetupFacts): ProseFinding[] {
+  const files = facts.settings
+  const covers = (rules: string[], command: string) => rules.some((rule) => ruleCovers(rule, command))
+  const [deny, ask, allow] = [all(files, (f) => f.deny), all(files, (f) => f.ask), all(files, (f) => f.allow)]
+  const noPrompt = files.some((f) => f.defaultMode !== null && NO_PROMPT_MODES.has(f.defaultMode))
+  return (facts.restricted ?? []).map((r) => {
+    const enforced = covers(deny, r.command) || (r.kind === 'ask' && covers(ask, r.command))
+    const state = enforced ? 'enforced' : covers(allow, r.command) || noPrompt ? 'allowed' : r.kind === 'ask' ? 'prompt' : 'open'
+    return { ...r, state }
+  })
+}
+
+const nameFinding = (f: ProseFinding) => `"${f.command}" (${f.kind === 'ask' ? 'ask first' : 'never'}, ${f.file} line ${f.line})`
+const listFindings = (findings: ProseFinding[], limit = 4) =>
+  findings.slice(0, limit).map(nameFinding).join('; ') + (findings.length > limit ? `; and ${findings.length - limit} more` : '')
+
+function proseChecks(facts: SetupFacts): Unprompted[] {
+  const source = `${DOCS}/permissions.md`
+  const base = { id: 'prose-rules', group: 'guardrails' as const, title: 'Rules in the instructions have a permission rule behind them', source }
+  const findings = proseFindings(facts)
+  if (!findings.length) {
+    return [
+      {
+        ...base,
+        status: 'info',
+        detail: 'No instruction file names a command to never run, or to ask about first. Only a command written out, such as "git push", is found.',
+        fix: '',
+      },
+    ]
+  }
+  const allowed = findings.filter((f) => f.state === 'allowed')
+  const open = findings.filter((f) => f.state === 'open')
+  const prompt = findings.filter((f) => f.state === 'prompt')
+  const enforced = findings.filter((f) => f.state === 'enforced')
+  const parts: string[] = []
+  if (allowed.length) parts.push(`The instructions restrict ${plural(allowed.length, 'command')} that an allow rule or the permission mode lets run without asking: ${listFindings(allowed)}.`)
+  if (open.length) parts.push(`${plural(open.length, 'command')} the instructions say never to run ${open.length === 1 ? 'has' : 'have'} no deny rule: ${listFindings(open)}.`)
+  if (prompt.length) parts.push(`${plural(prompt.length, 'ask-first command')} ${prompt.length === 1 ? 'is' : 'are'} held only by the default prompt, which one "don't ask again" removes: ${listFindings(prompt, 3)}.`)
+  if (enforced.length) parts.push(`${plural(enforced.length, 'restricted command')} ${enforced.length === 1 ? 'has' : 'have'} a rule behind ${enforced.length === 1 ? 'it' : 'them'}.`)
+  const needsLook = allowed.length > 0 || open.length > 0
+  return [
+    {
+      ...base,
+      status: needsLook ? 'warn' : 'pass',
+      detail: parts.join(' ') + (needsLook ? ' This check reads words, so confirm each line means what it found.' : ''),
+      fix: needsLook
+        ? 'The docs say "Permission rules are enforced by Claude Code, not by the model", and that instructions "shape what Claude tries to do, but they don\'t change these rules". Add a deny rule for a command the instructions forbid and an ask rule for one they say to ask about, and remove an allow rule that contradicts them.'
+        : '',
+    },
+  ]
 }
 
 function memoryChecks(facts: SetupFacts): Unprompted[] {
@@ -424,6 +618,15 @@ export function promptFor(check: Unprompted, facts: SetupFacts): string {
         'Keep every rule that is already in the file. Show me the diff before you save it, and tell me how to confirm afterwards that a read of one of these files is refused.'
       )
     }
+    case 'prose-rules': {
+      const findings = proseFindings(facts).filter((f) => f.state === 'allowed' || f.state === 'open')
+      return (
+        `My instruction files restrict these commands, and no permission rule enforces it: ${findings.map(nameFinding).join('; ')}. ` +
+        'First read each line and tell me if it really restricts that command. For each one that does, propose a rule for the permissions in .claude/settings.json: ' +
+        'a deny rule where the instructions say never, an ask rule where they say to ask first. If an allow rule in any settings file approves one of these commands, show me that rule and say whether to remove it. ' +
+        'Keep every other rule. Show me the diff before you save it, and tell me how to confirm afterwards that each rule works.'
+      )
+    }
     case 'broad-allow':
       return (
         'My Claude Code settings hold an allow rule that approves every shell command. Find it in the settings files, then list the shell commands this project really needs, ' +
@@ -470,6 +673,7 @@ export const LAYER_OF: Readonly<Record<string, Layer>> = {
   sandbox: 'permissions',
   reach: 'permissions',
   managed: 'permissions',
+  'prose-rules': 'permissions',
   'subagent-scope': 'permissions',
   retention: 'observability',
 }
@@ -512,7 +716,7 @@ export const LAYERS: ReadonlyArray<{ key: Layer; title: string; what: string; un
     key: 'permissions',
     title: 'Permissions',
     what: 'What the agent may do without asking, and what it may never do.',
-    unchecked: 'It does not find a rule written in the instructions that no permission rule enforces.',
+    unchecked: 'It finds a restricted command only when the instructions write it out, as in git push. It does not understand a rule in plain words.',
   },
   {
     key: 'observability',
@@ -523,7 +727,7 @@ export const LAYERS: ReadonlyArray<{ key: Layer; title: string; what: string; un
 ]
 
 export function runChecks(facts: SetupFacts): Check[] {
-  const checks: Unprompted[] = [...memoryChecks(facts), ...automationChecks(facts), ...guardrailChecks(facts), ...verificationChecks(facts)]
+  const checks: Unprompted[] = [...memoryChecks(facts), ...automationChecks(facts), ...guardrailChecks(facts), ...proseChecks(facts), ...verificationChecks(facts)]
   return checks.map((check) => ({ ...check, layer: layerOf(check.id), prompt: promptFor(check, facts) }))
 }
 

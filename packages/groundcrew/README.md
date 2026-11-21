@@ -72,6 +72,7 @@ console.log(summarize(checks))
 - Whether the sandbox is on.
 - How many folders outside the project the agent can reach.
 - How long session transcripts are kept.
+- From 0.1.6: whether a command your instructions restrict has a permission rule behind it. See below.
 
 **Verification: who checks the work when the agent says it is done**
 
@@ -91,10 +92,29 @@ From 0.1.5 the page also sorts the same checks into six layers of an agent's har
 | Sensors | What checks the work | Hooks, and whether the agent can run your checks |
 | Loop | What sends the agent back when the work is not done | The Stop hook |
 | Memory | What carries over between sessions | The auto memory index |
-| Permissions | What the agent may and may not do | Secrets, blanket approvals, permission mode, sandbox, reach, subagent tools |
+| Permissions | What the agent may and may not do | Secrets, blanket approvals, permission mode, sandbox, reach, subagent tools, rules written in the instructions |
 | Observability | What a person can see of what the agent did | Transcript retention, as a fact |
 
 Each row on the page also says what Groundcrew does **not** check in that layer, so a row of passes is not read as "covered". Loop, memory and observability have one check each. In `--json` the rows are under `layers`, and each check carries its `layer`.
+
+## Rules written in the instructions
+
+A line in `CLAUDE.md` such as "never run `git reset --hard`" is advice. The Claude Code docs say "Permission rules are enforced by Claude Code, not by the model", and that instructions "shape what Claude tries to do, but they don't change these rules".
+
+From 0.1.6 Groundcrew reads `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and the files under `.claude/rules/` for commands they say never to run, or to ask about first, and compares them with your permission rules:
+
+| The instructions say | Groundcrew asks you to look when |
+|---|---|
+| Never run a command | No deny rule covers it |
+| Ask before running a command | An allow rule, or a permission mode that does not prompt, lets it run unasked |
+
+An ask-first command that no rule names is not flagged, because Claude Code prompts for it by default. The check does say how many commands rest on that prompt alone, since one "don't ask again" removes it.
+
+Limits:
+
+- **It reads words, not meaning.** It finds a command only when the line writes it out, as in `git push`. "Never push to main" names no command and is not found.
+- **It can be wrong about a line**, so the result is "look", never "fix", and the prompt it gives asks Claude Code to confirm each line before proposing a rule.
+- **It finds, and does not write.** The rules are yours to add.
 
 The layer names follow the "guides and sensors" way of describing an agent harness that several engineering teams have written about. The grouping of checks into them is ours.
 
