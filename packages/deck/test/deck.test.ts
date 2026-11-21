@@ -254,7 +254,7 @@ describe('the page', () => {
 
 describe('the request handler', () => {
   const tree = () => path.join(dir, 'proj')
-  const ctx = (over: Partial<Context['deck']> = {}): Context => ({ port: 4316, version: 't', probe: false, sample: false, report: null, sendQuestions: [], deck: { mailbox: null, projectsDir: path.join(dir, 'projects'), sockDir: path.join(dir, 'socks'), now: NOW, machine: 'test-mac', ...over } })
+  const ctx = (over: Partial<Context['deck']> = {}): Context => ({ configFile: '/nonexistent/config.json', port: 4316, version: 't', probe: false, sample: false, report: null, sendQuestions: [], deck: { mailbox: null, projectsDir: path.join(dir, 'projects'), sockDir: path.join(dir, 'socks'), now: NOW, machine: 'test-mac', ...over } })
   beforeEach(() => {
     mkdirSync(path.join(dir, 'projects', 'a'), { recursive: true })
     mkdirSync(path.join(dir, 'socks'))

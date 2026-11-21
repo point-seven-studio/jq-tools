@@ -18,7 +18,6 @@ import {
   buildStatusRow,
   deriveAttention,
   deriveState,
-  deriveTurnCheck,
   deriveWaiting,
   endsWithQuestion,
   isTreeAllowed,
@@ -30,6 +29,7 @@ import {
   QUESTION_MAX_CHARS,
   type TranscriptRecord,
 } from '../src/agent-status.js'
+import { deriveTurnCheck } from '../src/turn-check.js'
 
 const NOW = Date.parse('2026-08-18T15:00:00.000Z')
 const iso = (secondsAgo: number) => new Date(NOW - secondsAgo * 1000).toISOString()

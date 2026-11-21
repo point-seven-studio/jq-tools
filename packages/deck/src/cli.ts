@@ -12,7 +12,7 @@
 import { spawn } from 'child_process'
 import { createServer } from 'http'
 import path from 'path'
-import { renderPage as renderSessions, snapshot } from '@point-seven-studio/jq-agents'
+import { readTurnCheckConfig, renderPage as renderSessions, snapshot } from '@point-seven-studio/jq-agents'
 import { buildReport, renderPage as renderMail } from '@point-seven-studio/jq-crosstalk'
 import { renderPage as renderSetup, report as setupReport } from '@point-seven-studio/jq-groundcrew'
 import { collectOverview, type DeckOptions } from './collect.js'
@@ -93,6 +93,8 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
 }
 
 export interface Context {
+  /** The config file, read again on each page load for corrections made on the JQ Agents board. */
+  configFile: string
   port: number
   version: string
   deck: DeckOptions
@@ -120,6 +122,7 @@ export function reportList(a: Pick<Args, 'repos' | 'allRepos'>, fromConfig: stri
 export function buildContext(a: Args, env: Record<string, string | undefined>, cwd: string, version: string): Context {
   const config = loadConfig(expandHome(a.config))
   return {
+    configFile: expandHome(a.config),
     port: a.port,
     version,
     probe: a.probe,
@@ -163,7 +166,7 @@ export async function handle(url: string, host: string | undefined, ctx: Context
     return html(renderShell(await overview(ctx.deck), tab, u.searchParams.get('repo'), ctx.version))
   }
   if (u.pathname === '/raw/sessions') {
-    return html(renderSessions(await snapshot({ questionTrees: ctx.deck.questionTrees, maxAgeDays: ctx.deck.maxAgeDays, projectsDir: ctx.deck.projectsDir, sockDir: ctx.deck.sockDir, probe: ctx.probe, sample: ctx.sample })))
+    return html(renderSessions(await snapshot({ questionTrees: ctx.deck.questionTrees, maxAgeDays: ctx.deck.maxAgeDays, projectsDir: ctx.deck.projectsDir, sockDir: ctx.deck.sockDir, probe: ctx.probe, sample: ctx.sample, turnCheck: readTurnCheckConfig(ctx.configFile) })))
   }
   if (u.pathname === '/raw/setup') {
     // The id is looked up among the repositories on the page, so a URL can never

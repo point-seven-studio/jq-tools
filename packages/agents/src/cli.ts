@@ -9,12 +9,19 @@
  * The page server listens on this machine only. Nothing leaves the machine unless
  * you say so: --exec hands the snapshot to a command of yours, and --probe times a
  * TLS handshake to the API host.
+ *
+ * The page can save corrections to the check label. That is the one thing this tool
+ * writes: the `turnCheck` key of ~/.jq/config.json. A save must come from the page this
+ * process served (see `allowedPost`). --no-manage serves the page with no forms.
  */
 import { spawn } from 'child_process'
+import { randomBytes } from 'crypto'
 import { writeFileSync } from 'fs'
-import { createServer } from 'http'
+import { createServer, type IncomingMessage } from 'http'
 import { snapshot, type Snapshot } from './collect.js'
+import { defaultConfigFile, readTurnCheckConfig, writeTurnCheckConfig } from './config.js'
 import { renderPage } from './page.js'
+import { applyAction, parseAction } from './turn-check.js'
 
 export const DEFAULT_PORT = 4319
 
@@ -29,6 +36,9 @@ export interface Args {
   sample: boolean
   questionTrees: string[]
   maxAgeDays: number
+  /** Whether the served page offers forms that save corrections. */
+  manage: boolean
+  configFile: string
 }
 
 const list = (s: string | undefined) => (s || '').split(',').map((x) => x.trim()).filter(Boolean)
@@ -45,6 +55,8 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     sample: true,
     questionTrees: list(env.JQ_AGENTS_QUESTION_TREES),
     maxAgeDays: Number(env.JQ_AGENTS_MAX_AGE_DAYS) || 3,
+    manage: true,
+    configFile: env.JQ_CONFIG || defaultConfigFile(),
   }
   const value = (i: number, flag: string) => {
     const v = argv[i + 1]
@@ -57,6 +69,8 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     else if (f === '--watch') a.watch = true
     else if (f === '--probe') a.probe = true
     else if (f === '--no-sample') a.sample = false
+    else if (f === '--no-manage') a.manage = false
+    else if (f === '--config') a.configFile = value(i++, f)
     else if (f === '--html') a.html = value(i++, f)
     else if (f === '--exec') a.exec = value(i++, f)
     else if (f === '--interval') a.intervalS = Number(value(i++, f))
@@ -73,7 +87,41 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
   return a
 }
 
-const collect = (a: Args): Promise<Snapshot> => snapshot({ questionTrees: a.questionTrees, maxAgeDays: a.maxAgeDays, probe: a.probe, sample: a.sample })
+/** `evidence` is asked for by the local page only: it holds command text. */
+const collect = (a: Args, evidence = false): Promise<Snapshot> =>
+  snapshot({ questionTrees: a.questionTrees, maxAgeDays: a.maxAgeDays, probe: a.probe, sample: a.sample, turnCheck: readTurnCheckConfig(a.configFile), evidence })
+
+/**
+ * Whether a POST may change the config. Three things must hold, because any web page a
+ * person visits can make their browser post to 127.0.0.1:
+ *  - the Host is this server, by its loopback name (a page that points a name of its own at
+ *    127.0.0.1 sends that name);
+ *  - the Origin, when the browser sends one, is this server;
+ *  - the form carries the token this process put in the page it served.
+ */
+export function allowedPost(headers: { host?: string; origin?: string }, port: number, token: string, sent: string | undefined): boolean {
+  const hosts = [`127.0.0.1:${port}`, `localhost:${port}`]
+  if (!headers.host || !hosts.includes(headers.host)) return false
+  if (headers.origin !== undefined && !hosts.map((h) => `http://${h}`).includes(headers.origin)) return false
+  return typeof sent === 'string' && sent.length === token.length && sent === token
+}
+
+const MAX_BODY = 8 * 1024
+function readForm(req: IncomingMessage): Promise<Record<string, string> | null> {
+  return new Promise((resolve) => {
+    let size = 0
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > MAX_BODY) {
+        resolve(null)
+        req.destroy()
+      } else chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Object.fromEntries(new URLSearchParams(Buffer.concat(chunks).toString('utf8')))))
+    req.on('error', () => resolve(null))
+  })
+}
 
 /** Pipe one snapshot to the user's command. Resolves with its exit code. */
 function hand(cmd: string, snap: Snapshot): Promise<number> {
@@ -115,10 +163,41 @@ export async function run(argv: string[]): Promise<void> {
     console.log(`wrote ${a.html}`)
     return
   }
-  createServer(async (_req, res) => {
+  const token = randomBytes(16).toString('hex')
+  // What the last served page showed. A form may only name a tree or a session from it.
+  let shown: { trees: string[]; sessions: Record<string, string | null> } = { trees: [], sessions: {} }
+  const headers = {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    // No script, no outside resource, forms only to this server, and no framing by another page.
+    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    'x-content-type-options': 'nosniff',
+  }
+  createServer(async (req, res) => {
     try {
-      const page = renderPage(await collect(a))
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      if (req.method === 'POST' && req.url === '/turn-check' && a.manage) {
+        const form = await readForm(req)
+        if (!form || !allowedPost({ host: req.headers.host, origin: req.headers.origin }, a.port, token, form.token)) {
+          res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+          res.end('Refused. Reload the board and try again.')
+          return
+        }
+        const config = readTurnCheckConfig(a.configFile)
+        const action = parseAction(form, shown, config)
+        if (action) writeTurnCheckConfig(applyAction(config, action), a.configFile)
+        res.writeHead(303, { location: '/', 'cache-control': 'no-store' })
+        res.end()
+        return
+      }
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', allow: 'GET, HEAD' })
+        res.end('Method not allowed.')
+        return
+      }
+      const snap = await collect(a, a.manage)
+      shown = { trees: [...new Set(snap.sessions.map((r) => r.working_tree))], sessions: Object.fromEntries(snap.sessions.map((r) => [r.session_id, r.last_activity_at])) }
+      const page = renderPage(snap, Date.now(), a.manage ? { token, config: readTurnCheckConfig(a.configFile) } : undefined)
+      res.writeHead(200, headers)
       res.end(page)
     } catch (e: any) {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
