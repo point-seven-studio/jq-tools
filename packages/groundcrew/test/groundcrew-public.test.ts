@@ -65,7 +65,7 @@ describe('parseArgs', () => {
 
 describe('--fail-on, for CI', () => {
   const tmp = os.tmpdir()
-  const row = (status: Check['status']): Check => ({ id: status, group: 'setup', title: `a ${status} row`, status, detail: '', fix: '', source: '', prompt: '' })
+  const row = (status: Check['status']): Check => ({ id: status, group: 'setup', layer: 'guides', title: `a ${status} row`, status, detail: '', fix: '', source: '', prompt: '' })
   const rows = (...statuses: Check['status'][]) => statuses.map(row)
 
   test('reads the level, and does not take it as the folder', () => {

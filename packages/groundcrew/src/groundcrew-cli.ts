@@ -8,7 +8,7 @@
 import { existsSync, writeFileSync } from 'fs'
 import { createServer } from 'http'
 import path from 'path'
-import { FAIL_ON_LEVELS, failing, runChecks, summarize, type FailOn } from './groundcrew-core.js'
+import { FAIL_ON_LEVELS, failing, layerSummary, runChecks, summarize, type FailOn } from './groundcrew-core.js'
 import { canRead, gather, tilde } from './groundcrew-gather.js'
 import { renderPage, type Report } from './groundcrew-page.js'
 
@@ -17,7 +17,7 @@ export const DEFAULT_PORT = 4317
 export function report(project: string): Report {
   const { facts, filesRead } = gather(project)
   const checks = runChecks(facts)
-  return { project: tilde(project), generatedAt: new Date().toLocaleString('en-US'), filesRead, checks, summary: summarize(checks) }
+  return { project: tilde(project), generatedAt: new Date().toLocaleString('en-US'), filesRead, checks, summary: summarize(checks), layers: layerSummary(checks) }
 }
 
 export interface Parsed {
