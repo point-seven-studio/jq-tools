@@ -5,7 +5,7 @@
  * plain static-import test.
  */
 import { describe, expect, it, test } from 'vitest'
-import { allowsEveryCommand, boardSummary, deniesSecrets, looksLikeACheck, runChecks, summarize, type SettingsFile, type SetupFacts } from '../src/groundcrew-core.js'
+import { allowsEveryCommand, boardSummary, deniesSecrets, LAYER_OF, LAYERS, layerSummary, looksLikeACheck, runChecks, summarize, type SettingsFile, type SetupFacts } from '../src/groundcrew-core.js'
 import { renderPage } from '../src/groundcrew-page.js'
 
 const settings = (extra: Partial<SettingsFile> = {}): SettingsFile => ({
@@ -198,6 +198,46 @@ describe('summary', () => {
     for (const check of runChecks(facts({ legacyCommands: 3, autoMemoryIndex: { label: 'MEMORY.md', lines: 1, bytes: 1 } }))) {
       expect(check.source).toMatch(/^https:\/\/code\.claude\.com\/docs\/en\/[a-z-]+\.md$/)
     }
+  })
+})
+
+describe('harness layers', () => {
+  const empty = facts({ memory: [], settings: [], subagentFiles: [], secretFiles: ['.env'] })
+  const full = facts({ legacyCommands: 3, autoMemoryIndex: { label: 'MEMORY.md', lines: 1, bytes: 1 }, subagentFiles: [{ name: 'reviewer', limitsTools: false }] })
+  test('every check has a layer', () => {
+    for (const f of [facts(), empty, full]) {
+      for (const check of runChecks(f)) {
+        expect(Object.keys(LAYER_OF)).toContain(check.id.split(':')[0])
+        expect(check.layer).toBe(LAYER_OF[check.id.split(':')[0]])
+      }
+    }
+  })
+  test('gives one row per layer, in order, and counts every check once', () => {
+    const checks = runChecks(full)
+    const rows = layerSummary(checks)
+    expect(rows.map((r) => r.layer)).toEqual(LAYERS.map((l) => l.key))
+    expect(rows.reduce((n, r) => n + r.pass + r.warn + r.fail + r.info, 0)).toBe(checks.length)
+  })
+  test('a layer takes the worst status of its checks', () => {
+    const rows = layerSummary(runChecks(empty))
+    const state = (layer: string) => rows.find((r) => r.layer === layer)?.state
+    expect(state('permissions')).toBe('fix') // a secrets file with no deny rule
+    expect(state('loop')).toBe('look') // no Stop hook
+    expect(state('observability')).toBe('facts') // session records is a plain fact
+  })
+  test('a layer with no check says so and is not counted as good', () => {
+    const rows = layerSummary(runChecks(facts()).filter((c) => c.layer !== 'memory'))
+    expect(rows.find((r) => r.layer === 'memory')).toMatchObject({ pass: 0, warn: 0, fail: 0, info: 0, state: 'none' })
+  })
+  test('the page shows all six, and what is not checked in each', () => {
+    const checks = runChecks(empty)
+    const html = renderPage({ project: 'p', generatedAt: 'now', filesRead: [], checks, summary: summarize(checks) })
+    expect(html).toContain('Your harness, layer by layer')
+    for (const layer of LAYERS) {
+      expect(html).toContain(`<b>${layer.title}<span class="mut">`)
+      expect(html).toContain(layer.unchecked)
+    }
+    expect(html.indexOf('Your harness, layer by layer')).toBeLessThan(html.indexOf('<h2>Setup</h2>'))
   })
 })
 

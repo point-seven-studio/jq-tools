@@ -9,7 +9,7 @@
  * already good, and plain facts, are one line each, so they do not bury the fixes. Status is
  * never color alone: each row has an icon and a word. Light and dark follow the system.
  */
-import type { Check, Group, Status, Summary } from './groundcrew-core.js'
+import { LAYERS, layerSummary, type Check, type Group, type LayerSummary, type Status, type Summary } from './groundcrew-core.js'
 
 export interface Report {
   project: string
@@ -17,6 +17,8 @@ export interface Report {
   filesRead: string[]
   checks: Check[]
   summary: Summary
+  /** One row per harness layer. The page works it out from `checks`; it is here for --json. */
+  layers?: LayerSummary[]
 }
 
 const esc = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -95,6 +97,29 @@ const row = (check: Check) =>
   `<li>${dot(check.status)}<b>${esc(check.title)}<span class="mut"> · ${STATUS[check.status].word}</span></b><span class="d">${esc(check.detail)}</span>` +
   `<span class="src mut">${sourceLink(check)}</span></li>`
 
+const LAYER_DOT: Record<LayerSummary['state'], Status> = { fix: 'fail', look: 'warn', good: 'pass', facts: 'info', none: 'info' }
+
+function layerCount(row: LayerSummary): string {
+  const judged = row.pass + row.warn + row.fail
+  if (judged) return `${row.pass} of ${judged} good`
+  return row.info ? 'facts only' : 'no check ran'
+}
+
+/** The harness, one row per layer. Each row also says what Groundcrew does not check there. */
+function layerPanel(checks: Check[]): string {
+  const rows = layerSummary(checks).map((row) => {
+    const about = LAYERS.find((l) => l.key === row.layer)!
+    return (
+      `<li>${dot(LAYER_DOT[row.state])}<b>${about.title}<span class="mut"> · ${layerCount(row)}</span></b>` +
+      `<span class="d">${esc(about.what)} <span class="mut">${esc(about.unchecked)}</span></span></li>`
+    )
+  })
+  return (
+    '<h2>Your harness, layer by layer</h2><p class="mut">An agent is a model and what surrounds it. These are six parts of what surrounds it, with what the checks below found in each.</p>' +
+    `<ul class="rows">${rows.join('')}</ul>`
+  )
+}
+
 export function renderPage(report: Report): string {
   const { summary } = report
   const judged = summary.pass + summary.warn + summary.fail
@@ -124,6 +149,7 @@ export function renderPage(report: Report): string {
     `<div class="tile"><b>${summary.pass}</b><span>good</span></div><div class="tile"><b>${summary.score}%</b><span>of ${judged} checks pass</span></div></div>` +
     `<div class="bar" role="img" aria-label="${summary.fail} to fix, ${summary.warn} to look at, ${summary.pass} good">${bar}</div>` +
     todo +
+    layerPanel(report.checks) +
     groups +
     '<footer><p>This page was made on your machine from the files below, and it loads nothing, so nothing left the machine. ' +
     'Its one script copies a prompt to your clipboard when you press Copy. ' +

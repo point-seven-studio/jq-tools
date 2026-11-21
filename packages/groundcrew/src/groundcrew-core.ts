@@ -16,6 +16,13 @@
 
 export type Status = 'pass' | 'warn' | 'fail' | 'info'
 export type Group = 'setup' | 'guardrails' | 'verification'
+/**
+ * The part of an agent's harness a check is about. A harness is everything around the model:
+ * what steers it before it works (guides), what checks it afterwards (sensors), what sends it
+ * back to try again (loop), what it remembers between sessions (memory), what it may do
+ * (permissions), and what a person can see of it (observability).
+ */
+export type Layer = 'guides' | 'sensors' | 'loop' | 'memory' | 'permissions' | 'observability'
 
 export interface MemoryFile {
   /** A label a person can read, such as "CLAUDE.md" or "~/.claude/CLAUDE.md". */
@@ -63,6 +70,8 @@ export interface SetupFacts {
 export interface Check {
   id: string
   group: Group
+  /** Which layer of the harness the check is about. Set by runChecks from LAYER_OF. */
+  layer: Layer
   title: string
   status: Status
   /** What was found. */
@@ -307,7 +316,7 @@ function guardrailChecks(facts: SetupFacts): Unprompted[] {
   return checks
 }
 
-type Unprompted = Omit<Check, 'prompt'>
+type Unprompted = Omit<Check, 'prompt' | 'layer'>
 
 /** A command that tests, lints, type-checks or builds: something the agent can run to check a change. */
 export function looksLikeACheck(command: string): boolean {
@@ -440,9 +449,107 @@ export function promptFor(check: Unprompted, facts: SetupFacts): string {
   }
 }
 
+/**
+ * The layer each check belongs to, by the part of its id before any colon. A check added
+ * without a line here fails the test "every check has a layer".
+ */
+export const LAYER_OF: Readonly<Record<string, Layer>> = {
+  'memory-exists': 'guides',
+  'memory-length': 'guides',
+  skills: 'guides',
+  'legacy-commands': 'guides',
+  hooks: 'sensors',
+  'verify-command': 'sensors',
+  'stop-check': 'loop',
+  'auto-memory-index': 'memory',
+  'allow-rules': 'permissions',
+  'subagents-and-mcp': 'permissions',
+  'deny-secrets': 'permissions',
+  'broad-allow': 'permissions',
+  'default-mode': 'permissions',
+  sandbox: 'permissions',
+  reach: 'permissions',
+  managed: 'permissions',
+  'subagent-scope': 'permissions',
+  retention: 'observability',
+}
+
+export function layerOf(id: string): Layer {
+  return LAYER_OF[id.split(':')[0]] ?? 'guides'
+}
+
+/**
+ * The six layers in reading order. `unchecked` names what Groundcrew does NOT look at in that
+ * layer, so a row of passes is not read as "this layer is covered". Shorten a line only when
+ * a check for it ships.
+ */
+export const LAYERS: ReadonlyArray<{ key: Layer; title: string; what: string; unchecked: string }> = [
+  {
+    key: 'guides',
+    title: 'Guides',
+    what: 'What steers the agent before it works: instructions, rules and skills.',
+    unchecked: 'It does not judge what the instructions say, only how long they are.',
+  },
+  {
+    key: 'sensors',
+    title: 'Sensors',
+    what: 'What checks the work: tests, linters and hooks the agent can run.',
+    unchecked: 'It does not see your CI, so it cannot tell a check that always fails from one that works.',
+  },
+  {
+    key: 'loop',
+    title: 'Loop',
+    what: 'What sends the agent back when the work is not done.',
+    unchecked: 'It does not look at retry or spending limits for runs with no person present.',
+  },
+  {
+    key: 'memory',
+    title: 'Memory',
+    what: 'What carries over from one session to the next.',
+    unchecked: 'It does not look for handoff notes or a record of decisions.',
+  },
+  {
+    key: 'permissions',
+    title: 'Permissions',
+    what: 'What the agent may do without asking, and what it may never do.',
+    unchecked: 'It does not find a rule written in the instructions that no permission rule enforces.',
+  },
+  {
+    key: 'observability',
+    title: 'Observability',
+    what: 'What a person can see of what the agent did.',
+    unchecked: 'It does not look for cost tracking or alerts.',
+  },
+]
+
 export function runChecks(facts: SetupFacts): Check[] {
   const checks: Unprompted[] = [...memoryChecks(facts), ...automationChecks(facts), ...guardrailChecks(facts), ...verificationChecks(facts)]
-  return checks.map((check) => ({ ...check, prompt: promptFor(check, facts) }))
+  return checks.map((check) => ({ ...check, layer: layerOf(check.id), prompt: promptFor(check, facts) }))
+}
+
+export interface LayerSummary {
+  layer: Layer
+  title: string
+  pass: number
+  warn: number
+  fail: number
+  info: number
+  /**
+   * The worst status among the layer's checks. "facts" means the layer has rows but none that
+   * can pass or fail; "none" means no check ran for it in this project.
+   */
+  state: 'fix' | 'look' | 'good' | 'facts' | 'none'
+}
+
+/** One row per layer, in the order of LAYERS, including layers with no check. */
+export function layerSummary(checks: Check[]): LayerSummary[] {
+  return LAYERS.map(({ key, title }) => {
+    const mine = checks.filter((c) => c.layer === key)
+    const count = (status: Status) => mine.filter((c) => c.status === status).length
+    const [pass, warn, fail, info] = [count('pass'), count('warn'), count('fail'), count('info')]
+    const state = fail ? 'fix' : warn ? 'look' : pass ? 'good' : info ? 'facts' : 'none'
+    return { layer: key, title, pass, warn, fail, info, state }
+  })
 }
 
 export interface Summary {

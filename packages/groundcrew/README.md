@@ -6,7 +6,7 @@ Groundcrew reads how Claude Code is set up for a project and shows you what to f
 
 It runs on your machine. It sends nothing anywhere.
 
-![The JQ Groundcrew page for a project: one check to fix, four to look at, five good, and the first check with a prompt to paste into Claude Code.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/groundcrew/docs/screenshot.png)
+![The JQ Groundcrew page for a project: one check to fix, four to look at, five good, the list of what to do first, and the harness layer by layer.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/groundcrew/docs/screenshot.png)
 
 *The data in the picture is made up.*
 
@@ -80,6 +80,23 @@ console.log(summarize(checks))
 - Whether each subagent is limited to the tools its job needs.
 
 Each check links the page of Anthropic's Claude Code documentation it rests on. Advice that is ours, and not the docs', says "our suggestion".
+
+## The harness, layer by layer
+
+From 0.1.5 the page also sorts the same checks into six layers of an agent's harness, which is everything around the model:
+
+| Layer | What it is | Checks today |
+|---|---|---|
+| Guides | What steers the agent before it works | Instruction file length, skills, custom commands |
+| Sensors | What checks the work | Hooks, and whether the agent can run your checks |
+| Loop | What sends the agent back when the work is not done | The Stop hook |
+| Memory | What carries over between sessions | The auto memory index |
+| Permissions | What the agent may and may not do | Secrets, blanket approvals, permission mode, sandbox, reach, subagent tools |
+| Observability | What a person can see of what the agent did | Transcript retention, as a fact |
+
+Each row on the page also says what Groundcrew does **not** check in that layer, so a row of passes is not read as "covered". Loop, memory and observability have one check each. In `--json` the rows are under `layers`, and each check carries its `layer`.
+
+The layer names follow the "guides and sensors" way of describing an agent harness that several engineering teams have written about. The grouping of checks into them is ours.
 
 ## What it reads, and what it does not
 
