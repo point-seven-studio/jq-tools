@@ -76,6 +76,22 @@ console.log(totals(snap.sessions))
 - **Liveness is matched by working tree,** not by session. Two sessions in one repository are both marked alive if either is.
 - It reads your own account's sessions only.
 
+## Stopped without a check
+
+When a session ends its turn, it has decided on its own that the work is done. From 0.1.4 the board says when nothing else looked:
+
+- **stopped without running a check:** the turn edited files, and no test, lint, type-check or build command ran after the last edit.
+- **stopped after a failed check:** the last such command after the last edit reported an error.
+
+A session that checked its work, or edited nothing, gets no label. In `--json` each session has `turn_check`: `checked`, `failed`, `unchecked`, `no-edits` or `unknown`, and `null` while the session is still working.
+
+Limits:
+
+- **"Checked" means a check ran, not that the work is right.** A check whose output is piped into another program can fail and still read as passed.
+- **A file changed by a shell command is not seen.** A session that edits only through the shell reads `no-edits`, so it is never labelled. On the seven sessions we tried it on, all seven read `no-edits` for this reason.
+- **A check that a subagent ran is not counted.**
+- It reads tool names, shell commands and the error flag of a result, on your machine. One word per session comes out, and none of the command.
+
 ## Related tools
 
 - [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck): all of these on one local page, from one command.

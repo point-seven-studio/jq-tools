@@ -10,6 +10,8 @@
 
 /** One JSONL record from ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl. */
 export interface TranscriptRecord {
+  /** True on a record a subagent wrote. Its tool calls are not the session's own. */
+  isSidechain?: boolean
   type?: string
   timestamp?: string
   sessionId?: string
@@ -37,6 +39,11 @@ export interface AgentStatusRow {
   blocked_question: string | null
   question_redacted: boolean
   question_allowed: boolean
+  /**
+   * When the session has ended its turn: whether a check ran after its last file edit. NULL
+   * while it is still working, where the question does not apply. See deriveTurnCheck.
+   */
+  turn_check?: TurnCheck | null
 
   // Resource attributes, attached by the relay after the pure build. Optional
   // because a session with no matched pid has nothing to sample, and because a
@@ -249,6 +256,80 @@ export function deriveAttention(state: AgentStatusRow['state'], waiting: boolean
   return 'none' // dead
 }
 
+/**
+ * What stands behind "done". A session that ends its turn has decided on its own that the
+ * work is finished; this says whether anything but the session looked.
+ *
+ *   checked    a test, lint, type-check or build command ran after the last file edit
+ *   failed     the last such command after the last edit reported an error
+ *   unchecked  files were edited and no such command ran afterwards
+ *   no-edits   the turn edited no file, so there was nothing to check
+ *   unknown    the start of the turn is further back than the tail that was read
+ */
+export type TurnCheck = 'checked' | 'failed' | 'unchecked' | 'no-edits' | 'unknown'
+
+/** Tools that change a file. A file changed by a shell command is not seen: see deriveTurnCheck. */
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+
+/** A shell command that tests, lints, type-checks or builds. The same rule as JQ Groundcrew's. */
+export function looksLikeACheck(command: string): boolean {
+  return /\b(test|tests|jest|vitest|pytest|mocha|lint|eslint|ruff|tsc|typecheck|type-check|mypy|pyright|check|build|cargo (test|check|clippy)|go (test|vet))\b/i.test(command)
+}
+
+type Block = { type?: string; name?: string; id?: string; tool_use_id?: string; is_error?: boolean; input?: { command?: unknown } }
+const blocks = (rec: TranscriptRecord): Block[] => (Array.isArray(rec.message?.content) ? (rec.message!.content as Block[]).filter((b) => !!b && typeof b === 'object') : [])
+
+/** A record in which a person typed: a user record that is not only tool results. */
+function isPrompt(rec: TranscriptRecord): boolean {
+  if (rec.type !== 'user' || rec.isSidechain) return false
+  const content = rec.message?.content
+  return typeof content === 'string' ? content.trim() !== '' : blocks(rec).some((b) => b.type === 'text' || b.type === 'image')
+}
+
+/**
+ * Whether a check ran after the last file edit of the current turn. `records` is the
+ * transcript tail, newest last.
+ *
+ * It reads tool names, the text of shell commands on this machine, and the error flag of a
+ * result. None of that is kept: one word comes out.
+ *
+ * Measured 2026-11-21 on 9 local transcripts: of 781 results of a check-shaped shell command,
+ * 14 carried `is_error: true`. The flag follows the command's exit status, so a check whose
+ * output is piped into another program can fail and still read as passed. "checked" therefore
+ * means a check ran, not that the work is right.
+ *
+ * Two things it does not see, and both make it say less, not more: a file changed by a shell
+ * command (no edit is counted, so the turn can read "no-edits"), and a check a subagent ran.
+ */
+export function deriveTurnCheck(records: TranscriptRecord[]): TurnCheck {
+  let start = -1
+  for (let i = records.length - 1; i >= 0; i--) {
+    if (records[i] && isPrompt(records[i])) {
+      start = i
+      break
+    }
+  }
+  let step = 0
+  let lastEdit = -1
+  const checks: Array<{ step: number; id: string | undefined }> = []
+  const errored = new Set<string>()
+  for (const rec of records.slice(start + 1)) {
+    if (!rec || rec.isSidechain) continue
+    for (const block of blocks(rec)) {
+      step += 1
+      if (block.type === 'tool_result' && block.is_error === true && block.tool_use_id) errored.add(block.tool_use_id)
+      if (block.type !== 'tool_use') continue
+      if (block.name && EDIT_TOOLS.has(block.name)) lastEdit = step
+      else if (block.name === 'Bash' && typeof block.input?.command === 'string' && looksLikeACheck(block.input.command)) checks.push({ step, id: block.id })
+    }
+  }
+  if (lastEdit < 0) return start >= 0 ? 'no-edits' : 'unknown'
+  const after = checks.filter((c) => c.step > lastEdit)
+  if (!after.length) return 'unchecked'
+  const last = after[after.length - 1]
+  return last.id && errored.has(last.id) ? 'failed' : 'checked'
+}
+
 /** Is this working tree allowed to report question text at all? */
 export function isTreeAllowed(workingTree: string, allowlist: string[]): boolean {
   if (!workingTree) return false
@@ -318,5 +399,7 @@ export function buildStatusRow(opts: {
     blocked_question,
     question_redacted,
     question_allowed: allowed,
+    // "Said done" is an ended turn. A turn cut short, or one still running, has claimed nothing.
+    turn_check: substantive?.type === 'assistant' && substantive.message?.stop_reason === 'end_turn' ? deriveTurnCheck(records) : null,
   }
 }

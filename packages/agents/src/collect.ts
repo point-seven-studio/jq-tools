@@ -51,8 +51,12 @@ export function defaultProjectsDir(): string {
   return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects')
 }
 
-/** Transcript records read from the tail: enough to get past metadata records. */
-const TAIL_RECORDS = 60
+/**
+ * Transcript records read from the tail. 60 was enough to get past metadata records. The
+ * turn check needs to reach the start of the current turn: measured 2026-11-21 on 7 local
+ * sessions that had ended a turn, 60 records left 3 of them "unknown" and 200 left none.
+ */
+const TAIL_RECORDS = 200
 
 /** Recursive walk, NEVER a fixed-depth glob (trap 1). */
 async function findTranscripts(dir: string, out: string[] = []): Promise<string[]> {
