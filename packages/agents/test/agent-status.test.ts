@@ -18,6 +18,7 @@ import {
   buildStatusRow,
   deriveAttention,
   deriveState,
+  deriveTurnCheck,
   deriveWaiting,
   endsWithQuestion,
   isTreeAllowed,
@@ -272,5 +273,70 @@ describe('buildStatusRow', () => {
         allowlist: [],
       }),
     ).toBeNull()
+  })
+})
+
+describe('deriveTurnCheck: what stands behind "done"', () => {
+  let n = 0
+  const prompt = (text = 'fix the bug'): TranscriptRecord => ({ type: 'user', message: { role: 'user', content: text } })
+  const use = (name: string, command?: string): TranscriptRecord & { id: string } => {
+    const id = `tool-${++n}`
+    return { id, type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input: command ? { command } : {} }] } }
+  }
+  const result = (of: { id: string }, isError = false): TranscriptRecord => ({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: of.id, is_error: isError, content: 'output' }] },
+  })
+  const done = assistant('Done. The bug is fixed.')
+
+  it('checked: a check ran after the last edit', () => {
+    const test = use('Bash', 'npm test')
+    expect(deriveTurnCheck([prompt(), use('Edit'), test, result(test), done])).toBe('checked')
+  })
+  it('unchecked: an edit after the last check is not covered by it', () => {
+    const test = use('Bash', 'npm test')
+    expect(deriveTurnCheck([prompt(), use('Edit'), test, result(test), use('Write'), done])).toBe('unchecked')
+    expect(deriveTurnCheck([prompt(), use('Edit'), use('Bash', 'git status'), done])).toBe('unchecked')
+  })
+  it('failed: the last check after the last edit reported an error', () => {
+    const first = use('Bash', 'npx tsc --noEmit')
+    const second = use('Bash', 'npm run lint')
+    expect(deriveTurnCheck([prompt(), use('Edit'), first, result(first), second, result(second, true), done])).toBe('failed')
+    // A failure that a later check follows is not the last word.
+    expect(deriveTurnCheck([prompt(), use('Edit'), second, result(second, true), first, result(first), done])).toBe('checked')
+  })
+  it('no-edits: a turn that changed no file has nothing to check', () => {
+    expect(deriveTurnCheck([prompt('what does this do?'), use('Read'), done])).toBe('no-edits')
+  })
+  it('only the current turn counts: a check in the turn before does not', () => {
+    const test = use('Bash', 'npm test')
+    expect(deriveTurnCheck([prompt(), use('Edit'), test, result(test), done, prompt('now rename it'), use('Edit'), done])).toBe('unchecked')
+  })
+  it('a tool result is not the start of a turn', () => {
+    const test = use('Bash', 'npm test')
+    expect(deriveTurnCheck([prompt(), use('Edit'), use('Bash', 'ls'), result(test), test, result(test), done])).toBe('checked')
+  })
+  it('unknown: no edit in the tail and the start of the turn is not in it', () => {
+    expect(deriveTurnCheck([use('Read'), done])).toBe('unknown')
+    // An edit in the tail is enough to answer, wherever the turn began.
+    expect(deriveTurnCheck([use('Edit'), done])).toBe('unchecked')
+  })
+  it('ignores what a subagent did', () => {
+    const side = { ...use('Bash', 'npm test'), isSidechain: true }
+    expect(deriveTurnCheck([prompt(), use('Edit'), side, done])).toBe('unchecked')
+  })
+
+  const row = (records: TranscriptRecord[]) =>
+    buildStatusRow({ machine: 'm', records, sessionIdFallback: 's', alive: true, pid: 1, allowlist: [], now: NOW })
+  it('is set only when the session has ended its turn', () => {
+    expect(row([prompt(), use('Edit'), done])?.turn_check).toBe('unchecked')
+    expect(row([prompt(), use('Edit'), assistant('working', 'tool_use')])?.turn_check).toBeNull()
+    expect(row([prompt(), use('Edit'), assistant('cut off', null)])?.turn_check).toBeNull()
+  })
+  it('sends one word and none of the command', () => {
+    const test = use('Bash', 'npm test -- --secret-flag')
+    const built = row([prompt(), use('Edit'), test, result(test), done])
+    expect(built?.turn_check).toBe('checked')
+    expect(JSON.stringify(built)).not.toContain('secret-flag')
   })
 })

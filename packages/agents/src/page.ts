@@ -18,6 +18,11 @@ export function ago(iso: string | null, now: number): string {
   return `${Math.floor(s / 86400)}d`
 }
 
+/** Sessions that ended a turn after editing files with no check afterwards, or with a failed one. */
+export function unverified(rows: AgentStatusRow[]): AgentStatusRow[] {
+  return rows.filter((r) => r.state !== 'dead' && (r.turn_check === 'unchecked' || r.turn_check === 'failed'))
+}
+
 export interface Totals {
   sessions: number
   live: number
@@ -62,6 +67,14 @@ function sessionRow(r: AgentStatusRow, now: number): string {
       : attention === 'abandoned'
         ? '<span class="b old">asked, then left</span>'
         : ''
+  // Only the two that need a look are shown. "checked" and "no-edits" would be on most rows,
+  // and a label on most rows is a label nobody reads.
+  const check =
+    r.turn_check === 'unchecked'
+      ? '<span class="b need">stopped without running a check</span>'
+      : r.turn_check === 'failed'
+        ? '<span class="b bad">stopped after a failed check</span>'
+        : ''
   const res = r.cpu_pct != null || r.rss_mb != null ? `<span class="mut">${r.cpu_pct ?? '?'}% cpu · ${r.rss_mb ?? '?'} MB</span>` : ''
   // "Off for this tree" and "nothing to show" are different facts; say which.
   const question = r.blocked_question
@@ -69,7 +82,7 @@ function sessionRow(r: AgentStatusRow, now: number): string {
     : attention !== 'none' && !r.question_allowed
       ? '<p class="mut q">Question text is off for this tree.</p>'
       : ''
-  return `<li><span class="s ${r.state}">${r.state}</span> <span class="mut">${esc(r.branch || 'no branch')} · active ${ago(r.last_activity_at, now)} ago</span> ${badge} ${res}${question}</li>`
+  return `<li><span class="s ${r.state}">${r.state}</span> <span class="mut">${esc(r.branch || 'no branch')} · active ${ago(r.last_activity_at, now)} ago</span> ${[badge, check].filter(Boolean).join('<span class="mut"> · </span>')} ${res}${question}</li>`
 }
 
 export function renderPage(snap: Snapshot, now = Date.now()): string {
@@ -95,7 +108,7 @@ h1{font-size:24px;margin:0}h2{font-size:15px;margin:0;padding:10px 12px;word-bre
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden}
 ul{list-style:none;margin:0;padding:0}li{border-top:1px solid var(--line);padding:8px 12px}
 .s{font-size:11px;font-weight:700;text-transform:uppercase;border-radius:4px;padding:1px 6px;border:1px solid var(--line)}.s.live{color:var(--ok)}.s.dead{color:var(--mut)}
-.b{font-size:12px;font-weight:600}.b.need{color:var(--need)}.b.old{color:var(--mut)}
+.b{font-size:12px;font-weight:600}.b.need{color:var(--need)}.b.old{color:var(--mut)}.b.bad{color:var(--bad)}
 .chip{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--well);margin:8px 0 2px;padding:10px;border-radius:8px;font-size:12px}.q{margin:6px 0 0}
 </style></head><body><main>

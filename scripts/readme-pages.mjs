@@ -45,7 +45,7 @@ const session = (over) => ({ machine: 'dana-laptop', product: 'shop', working_tr
 const sessions = [
   session({ branch: 'orders-not-null', state: 'idle', waiting: true, last_activity_at: ago(42), question_allowed: true, blocked_question: 'The migration adds a NOT NULL column to orders. Should I backfill existing rows with 0, or make it nullable and backfill in a later change?', cpu_pct: 0.1, rss_mb: 388.0 }),
   session({ branch: 'checkout-copy', cpu_pct: 31.5, rss_mb: 640.2 }),
-  session({ product: 'api', working_tree: '/Users/dana/code/api', branch: 'rate-limits', state: 'idle', waiting: true, last_activity_at: ago(9), cpu_pct: 0.0, rss_mb: 301.7 }),
+  session({ product: 'api', working_tree: '/Users/dana/code/api', branch: 'rate-limits', state: 'idle', waiting: true, last_activity_at: ago(9), turn_check: 'unchecked', cpu_pct: 0.0, rss_mb: 301.7 }),
   session({ product: 'docs', working_tree: '/Users/dana/code/docs', branch: 'main', state: 'stale', waiting: true, last_activity_at: ago(60 * 26), pid: null, cpu_pct: null, rss_mb: null }),
   session({ product: 'docs', working_tree: '/Users/dana/code/docs', branch: 'install-guide', cpu_pct: 12.0, rss_mb: 455.1 }),
 ]
