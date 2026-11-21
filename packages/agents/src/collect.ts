@@ -29,6 +29,7 @@ import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
 import { buildStatusRow, type AgentStatusRow, type TranscriptRecord } from './agent-status.js'
+import { rulesFor, type TurnCheckConfig, type TurnEvidence } from './turn-check.js'
 import { deriveBottleneck, rateBps, type Bottleneck, type HostSample, type NetSample } from './host-metrics.js'
 import { sampleHost, sampleProcs } from './host-sampler.js'
 
@@ -45,6 +46,13 @@ export interface CollectOptions {
   maxAgeDays?: number
   machine?: string
   now?: number
+  /** What a person has corrected about the turn check. Default: nothing. */
+  turnCheck?: TurnCheckConfig
+  /**
+   * Called with why a row got its word, for rows that need a look. It holds command text, so
+   * it is handed over apart from the rows and is never part of a snapshot unless asked for.
+   */
+  onEvidence?: (sessionId: string, evidence: TurnEvidence) => void
 }
 
 export function defaultProjectsDir(): string {
@@ -199,7 +207,13 @@ export async function collectRows(opts: CollectOptions = {}): Promise<AgentStatu
       const rawCwd = [...records].reverse().find((r) => r?.cwd)?.cwd || ''
       const tree = rawCwd ? await repoRoot(rawCwd) : ''
       const pid = tree ? (cwdToPid.get(tree) ?? null) : null
+      const config = opts.turnCheck
+      let evidence: TurnEvidence | null = null
       const row = buildStatusRow({
+        turnCheck: config
+          ? { ...rulesFor(config, tree), muted: config.muted.includes(tree), dismissedAt: config.dismissed[path.basename(file, '.jsonl')] ?? null }
+          : undefined,
+        onTurnDetail: (detail) => (evidence = detail.evidence),
         machine,
         records,
         workingTreeOverride: tree || undefined,
@@ -209,7 +223,12 @@ export async function collectRows(opts: CollectOptions = {}): Promise<AgentStatu
         allowlist: opts.questionTrees ?? [],
         now,
       })
-      if (row) rows.push(row)
+      if (row) {
+        // The dismissal is keyed by the row's own session id, which can differ from the file name.
+        if (config && row.turn_check !== 'dismissed' && (row.turn_check === 'unchecked' || row.turn_check === 'failed') && config.dismissed[row.session_id] === row.last_activity_at) row.turn_check = 'dismissed'
+        rows.push(row)
+        if (evidence && opts.onEvidence) opts.onEvidence(row.session_id, evidence)
+      }
     } catch {
       /* one unreadable transcript must not end the sweep */
     }
@@ -231,6 +250,11 @@ export interface Snapshot {
   /** null when sampling was skipped or failed. */
   host: HostSample | null
   bottleneck: Bottleneck | null
+  /**
+   * Present only when asked for with `evidence: true`, which the local page does. It holds
+   * command text, so --json, --html and --exec never ask for it.
+   */
+  local?: { turn_check: Record<string, TurnEvidence> }
 }
 
 /**
@@ -240,8 +264,9 @@ export interface Snapshot {
  */
 let prevNet = new Map<number, { sample: NetSample; at: number }>()
 
-export async function snapshot(opts: CollectOptions & { sample?: boolean; probe?: boolean } = {}): Promise<Snapshot> {
-  const sessions = await collectRows(opts)
+export async function snapshot(opts: CollectOptions & { sample?: boolean; probe?: boolean; evidence?: boolean } = {}): Promise<Snapshot> {
+  const turn_check: Record<string, TurnEvidence> = {}
+  const sessions = await collectRows(opts.evidence ? { ...opts, onEvidence: (id, e) => (turn_check[id] = e) } : opts)
   let host: HostSample | null = null
   let bottleneck: Bottleneck | null = null
   if (opts.sample !== false) {
@@ -274,5 +299,7 @@ export async function snapshot(opts: CollectOptions & { sample?: boolean; probe?
       bottleneck = null
     }
   }
-  return { machine: opts.machine ?? os.hostname(), generated_at: new Date(opts.now ?? Date.now()).toISOString(), sessions, host, bottleneck }
+  const snap: Snapshot = { machine: opts.machine ?? os.hostname(), generated_at: new Date(opts.now ?? Date.now()).toISOString(), sessions, host, bottleneck }
+  if (opts.evidence) snap.local = { turn_check }
+  return snap
 }

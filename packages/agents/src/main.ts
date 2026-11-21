@@ -16,11 +16,14 @@ const HELP = `JQ Agents ${VERSION}: what every Claude Code session on this machi
   jq-agents --probe                also time a connection to the API host
   jq-agents --no-sample            skip CPU, memory and network sampling
   jq-agents --max-age-days N       ignore sessions idle longer than this (default 3)
+  jq-agents --no-manage            serve the board with no forms that save corrections
+  jq-agents --config FILE          where corrections are kept (default ~/.jq/config.json)
   jq-agents --port NUMBER
 
 It reads session transcripts under ~/.claude/projects and the process table. It is
-read-only: it never writes into a session. Nothing leaves this machine unless you
-pass --exec (your command gets the snapshot) or --probe (one timed connection).
+read-only: it never writes into a session. The one file it writes is its own
+config, when you correct a label on the board. Nothing leaves this machine unless
+you pass --exec (your command gets the snapshot) or --probe (one timed connection).
 
 Unofficial. Not affiliated with or endorsed by Anthropic.`
 

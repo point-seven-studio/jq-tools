@@ -36,7 +36,7 @@ Sessions are grouped by working tree (the git repository a session is in), becau
 ## What it reads, and what it does not send
 
 - It reads the tail of each session transcript under `~/.claude/projects`, a socket folder, and the process table.
-- It is **read-only**. It never writes into a session, and there is no way to answer a session from the board.
+- It is **read-only**. It never writes into a session, and there is no way to answer a session from the board. The one file it writes is its own config, when you correct a label: see below.
 - **Question text is off by default.** The board says a session is waiting, not what it asked. To show the question for sessions in chosen folders:
 
   ```sh
@@ -78,19 +78,39 @@ console.log(totals(snap.sessions))
 
 ## Stopped without a check
 
-When a session ends its turn, it has decided on its own that the work is done. From 0.1.4 the board says when nothing else looked:
+When a session ends its turn, it has decided on its own that the work is done. The board says when nothing else looked:
 
-- **stopped without running a check:** the turn edited files, and no test, lint, type-check or build command ran after the last edit.
+- **stopped without running a check:** the turn edited code, and no test, lint, type-check or build command ran after the last edit.
 - **stopped after a failed check:** the last such command after the last edit reported an error.
 
-A session that checked its work, or edited nothing, gets no label. In `--json` each session has `turn_check`: `checked`, `failed`, `unchecked`, `no-edits` or `unknown`, and `null` while the session is still working.
+A session that checked its work, or edited no code, gets no label. In `--json` each session has `turn_check` (`checked`, `failed`, `unchecked`, `no-edits`, `unknown` or `dismissed`, and `null` while the session is still working) and `turn_check_via` (`tool` or `shell`).
 
-Limits:
+### What counts as an edit
+
+- The edit tools, on a file that is code or configuration. A note, a picture, or a file in scratch space is not counted.
+- From 0.1.5, a shell command that writes a **named** code file: an in-place `sed` or `perl`, `mv`, `cp`, `rm`, `patch`, `tee`, `git apply|mv|rm`, a redirect into a file, or code handed to an interpreter that writes a file.
+
+A shell command is easy to misread, so the rule leans toward not counting one. We ran a first version over 2,762 ended turns in our own transcripts and it labelled 710 of them, nearly all wrongly: 326 were `source x >/dev/null`. The rule that shipped labels 69 of the same turns. We did not review those 69 one by one, so some of them are wrong too.
+
+### When a label is wrong
+
+On the board, a labelled row has a **Why, and is it wrong?** link. It shows the command that was taken as the edit and what ran after it, and offers:
+
+- **Count "..." as a check here:** for a project whose check is its own command, such as `make verify`.
+- **"..." does not edit code here:** for a command that was misread as an edit.
+- **Dismiss this one:** hides the label until that session moves again.
+- **Never label this tree.**
+
+Everything you have corrected is listed at the bottom of the board, each with a button to take it back.
+
+Corrections are saved under the `turnCheck` key of `~/.jq/config.json` (or `--config FILE`). It is the only file JQ Agents writes, and other keys in it are left as they were. A save is accepted only from the page this process served: the request must name this server, come from this server's own page, and carry a token made when the process started. `--no-manage` serves the board with no forms at all. `--html`, `--json` and `--exec` never include the forms or the command text.
+
+### Limits
 
 - **"Checked" means a check ran, not that the work is right.** A check whose output is piped into another program can fail and still read as passed.
-- **A file changed by a shell command is not seen.** A session that edits only through the shell reads `no-edits`, so it is never labelled. On the seven sessions we tried it on, all seven read `no-edits` for this reason.
+- **Missed edits:** a write whose target is held in a variable, and a formatter or a generator, which change files without naming them.
 - **A check that a subagent ran is not counted.**
-- It reads tool names, shell commands and the error flag of a result, on your machine. One word per session comes out, and none of the command.
+- It reads tool names, shell commands and the error flag of a result, on your machine. One word per session goes into a snapshot, and none of the command.
 
 ## Related tools
 
