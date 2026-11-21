@@ -4,14 +4,15 @@
  * It uses the filesystem and nothing else: no database, no network and no `import.meta`,
  * so it can be bundled into another tool.
  *
- * What it reads: the settings files, the memory files (line counts), the names of skills,
+ * What it reads: the settings files, the instruction files (line counts, and the commands they
+ * restrict), the names of skills,
  * subagents and commands, and the names of MCP servers. What it never reads: the contents of
  * a secrets file (it lists names such as "apps/api/.env" only) and session transcripts.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import os from 'os'
 import path from 'path'
-import type { MemoryFile, SettingsFile, SetupFacts } from './groundcrew-core.js'
+import { findRestrictedCommands, type MemoryFile, type RestrictedCommand, type SettingsFile, type SetupFacts } from './groundcrew-core.js'
 
 const SECRET_NAMES = /^(\.env(\..+)?|secrets?(\..+)?|credentials(\..+)?|.*\.pem|id_rsa)$/i
 const NOT_SECRET = /\.(example|sample|template)$/i
@@ -53,6 +54,14 @@ function countFiles(dir: string, test: (name: string) => boolean): number {
     else if (test(entry.name)) total += 1
   }
   return total
+}
+
+/** Every Markdown file under a directory, descending into subdirectories. */
+function markdownFiles(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory() ? markdownFiles(path.join(dir, entry.name)) : entry.name.endsWith('.md') ? [path.join(dir, entry.name)] : [],
+  )
 }
 
 /**
@@ -110,10 +119,12 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
   const filesRead: string[] = []
   const label = (file: string) => (file.startsWith(project + path.sep) ? file.slice(project.length + 1) : tilde(file))
 
-  const memoryFile = (file: string): MemoryFile | null => {
+  const restricted: RestrictedCommand[] = []
+  const memoryFile = (file: string, instructions = true): MemoryFile | null => {
     if (!existsSync(file) || !statSync(file).isFile()) return null
     const text = readFileSync(file, 'utf-8')
     filesRead.push(label(file))
+    if (instructions) restricted.push(...findRestrictedCommands(text, label(file)))
     return { label: label(file), lines: text.split('\n').length - (text.endsWith('\n') ? 1 : 0), bytes: Buffer.byteLength(text) }
   }
   const memory = [
@@ -123,8 +134,12 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
     path.join(project, 'AGENTS.md'),
     path.join(configDir(), 'CLAUDE.md'),
   ]
-    .map(memoryFile)
+    .map((file) => memoryFile(file))
     .filter((file): file is MemoryFile => file !== null)
+  // Rule files are instructions too. They are read for restricted commands and counted below.
+  for (const dir of [path.join(project, '.claude', 'rules'), path.join(configDir(), 'rules')]) {
+    for (const file of markdownFiles(dir)) restricted.push(...findRestrictedCommands(readFileSync(file, 'utf-8'), label(file)))
+  }
 
   const settingsFile = (scope: SettingsFile['scope'], file: string): SettingsFile | null => {
     const json = readJson(file)
@@ -174,7 +189,7 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
       platform: process.platform,
       memory,
       ruleFiles: countFiles(path.join(project, '.claude', 'rules'), isMarkdown) + countFiles(path.join(configDir(), 'rules'), isMarkdown),
-      autoMemoryIndex: memoryFile(path.join(configDir(), 'projects', encoded, 'memory', 'MEMORY.md')),
+      autoMemoryIndex: memoryFile(path.join(configDir(), 'projects', encoded, 'memory', 'MEMORY.md'), false),
       settings,
       skills: {
         project: countFiles(path.join(project, '.claude', 'skills'), (name) => name === 'SKILL.md'),
@@ -188,6 +203,7 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
       legacyCommands: countFiles(path.join(project, '.claude', 'commands'), isMarkdown),
       mcpServers: { project: Object.keys(projectMcp?.mcpServers || {}).length, user: userServers },
       secretFiles: findSecretFiles(project, '', 0).sort(),
+      restricted,
     },
   }
 }

@@ -153,7 +153,7 @@ export function renderPage(report: Report): string {
     groups +
     '<footer><p>This page was made on your machine from the files below, and it loads nothing, so nothing left the machine. ' +
     'Its one script copies a prompt to your clipboard when you press Copy. ' +
-    'It read settings and counted files. It did not read the contents of any secret file, and it read no session transcript.</p>' +
+    'It read settings and your instruction files, and counted the rest. It did not read the contents of any secret file, and it read no session transcript.</p>' +
     '<p>A suggested prompt asks Claude Code to show its plan or its diff first. Read that before you approve it.</p>' +
     `<ul>${report.filesRead.map((file) => `<li><code>${esc(file)}</code></li>`).join('')}</ul>` +
     '<p>Each check names the page of Anthropic’s Claude Code documentation it rests on. The documentation was checked on 2026-11-14 and can change.</p></footer>' +
