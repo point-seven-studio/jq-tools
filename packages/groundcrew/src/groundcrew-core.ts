@@ -714,7 +714,7 @@ function verificationChecks(facts: SetupFacts): Unprompted[] {
             ? `${open.length} of ${plural(runs.length, 'run')} with no person present ${open.length === 1 ? 'sets' : 'set'} no turn or spending limit: ${open.slice(0, 8).map(where).join(', ')}${open.length > 8 ? `, and ${open.length - 8} more` : ''}. The docs say of --max-turns: "No limit by default." Nobody is there to stop a run that goes round in circles.`
             : `All ${plural(runs.length, 'run')} with no person present set a turn or spending limit.`,
       fix: open.length
-        ? 'Add --max-turns with a number, or --max-budget-usd with an amount, to each. In the GitHub action they go in claude_args. The docs say the spending limit uses Claude Code\'s own estimate and the response that crosses it still completes, so set it below what you can afford.'
+        ? 'Add --max-turns with a number, or --max-budget-usd with an amount, to each. In the GitHub action they go in claude_args. The docs say the spending limit is checked against Claude Code\'s own estimate and that "Spend can pass the cap", so set it below what you can afford.'
         : '',
       source: `${DOCS}/cli-reference.md`,
     })
@@ -865,7 +865,7 @@ export const LAYER_OF: Readonly<Record<string, Layer>> = {
  * The OWASP Top 10 for LLM Applications 2025, by number. Names are copied from the project's
  * own files (github.com/OWASP/www-project-top-10-for-large-language-model-applications,
  * folder 2_0_vulns), read 2026-11-22. Do not add an entry from memory or from a summary of
- * the list: a widely shared graphic had seven of the ten numbers wrong.
+ * the list: a widely shared graphic had seven of its nine numbers wrong.
  */
 export const OWASP_LLM_2025 = {
   LLM01: 'Prompt Injection',
