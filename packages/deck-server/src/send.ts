@@ -7,7 +7,7 @@ import { sanitizeReport } from './report.js'
 
 const LOCAL = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
-/** The address to post to. Plain HTTP is refused except to this machine: the token would travel in the clear. */
+/** The address to post to: the server's address, or a full address that ends in /report. Plain HTTP is refused except to this machine: the token would travel in the clear. */
 export function reportUrl(base: string): URL {
   let url: URL
   try {
@@ -17,6 +17,14 @@ export function reportUrl(base: string): URL {
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOCAL.has(url.hostname))) throw new Error('--url must start with https (plain http is allowed only to this machine)')
   if (url.username || url.password) throw new Error('--url must not hold a user name or password; the token goes in $JQ_DECK_TOKEN')
+  // A board mounted inside another server has its report address under a path. Give that
+  // whole address, ending in /report, and it is used as written. Anything else is a server's
+  // own address, and the report goes to /report at its root.
+  if (url.pathname.endsWith('/report')) {
+    url.search = ''
+    url.hash = ''
+    return url
+  }
   return new URL('/report', url)
 }
 

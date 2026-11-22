@@ -426,6 +426,12 @@ describe('send and the command line', () => {
   it('refuses plain http off this machine, credentials in the address, and a missing token', async () => {
     expect(reportUrl('https://deck.example.com/team/').href).toBe('https://deck.example.com/report')
     expect(reportUrl('http://127.0.0.1:4320').href).toBe('http://127.0.0.1:4320/report')
+    // A full address that ends in /report is used as written, for a board mounted under a path.
+    expect(reportUrl('https://api.example.com/api/jq-deck/report').href).toBe('https://api.example.com/api/jq-deck/report')
+    expect(reportUrl('https://api.example.com/api/jq-deck/report?x=1#y').href).toBe('https://api.example.com/api/jq-deck/report')
+    expect(reportUrl('https://deck.example.com/report').href).toBe('https://deck.example.com/report')
+    expect(reportUrl('https://deck.example.com/reports').href).toBe('https://deck.example.com/report')
+    expect(() => reportUrl('http://api.example.com/api/jq-deck/report')).toThrow('https')
     expect(() => reportUrl('http://deck.example.com')).toThrow('https')
     expect(() => reportUrl('https://user:pw@deck.example.com')).toThrow('user name')
     expect(() => reportUrl('deck')).toThrow('not an address')
