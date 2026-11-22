@@ -1,6 +1,6 @@
 {
   "name": "@point-seven-studio/jq-agents",
-  "version": "0.2.0",
+  "version": "0.1.10",
   "description": "A local, read-only board of every Claude Code session on your machine: what each is doing and which are waiting on a person. Unofficial; not affiliated with or endorsed by Anthropic.",
   "bin": {
     "jq-agents": "dist/jq-agents.mjs"
