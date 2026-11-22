@@ -4,6 +4,7 @@
  *
  *   POST /report      a machine's report        Bearer machine token
  *   GET  /            the team page             viewer cookie
+ *                     ?group= &filter= &sort= &q= choose and order its rows; they change no number
  *   GET  /api/team    the same, as JSON         viewer cookie or Bearer viewer token
  *   GET  /login, POST /login, POST /logout
  *   GET  /healthz     "ok", for a load balancer
@@ -13,10 +14,13 @@ import { renderLogin, renderTeam } from './page.js'
 import { MAX_BODY_BYTES, sanitizeReport } from './report.js'
 import { machineFor, readConfig, readReports, saveReport, viewerFor, type Viewer } from './store.js'
 import { buildTeam } from './team.js'
+import { parseView } from './view.js'
 
 export interface Req {
   method: string
   path: string
+  /** What follows the ? in the address, when there is anything. Only the team page reads it. */
+  query?: string
   authorization?: string
   cookie?: string
   body: string
@@ -93,7 +97,7 @@ export function handle(req: Req, ctx: ServerContext): Res {
     const viewer: Viewer | null = viewerFor(config, cookieToken(req.cookie)) ?? (api ? viewerFor(config, bearer(req.authorization)) : null)
     if (!viewer) return api ? text(401, 'a viewer token is needed') : { status: 303, headers: { location: '/login' }, body: '' }
     const team = buildTeam(readReports(ctx.dir, config), now, viewer)
-    return api ? { status: 200, headers: JSON_TYPE, body: JSON.stringify(team, null, 2) } : { status: 200, headers: HTML, body: renderTeam(team, viewer.name, ctx.version) }
+    return api ? { status: 200, headers: JSON_TYPE, body: JSON.stringify(team, null, 2) } : { status: 200, headers: HTML, body: renderTeam(team, viewer.name, ctx.version, parseView(req.query)) }
   }
 
   return text(404, 'not found')
@@ -123,7 +127,7 @@ export function startServer(ctx: ServerContext, port: number, host: string, onLi
       try {
         reply = tooBig
           ? text(413, 'the body is too large')
-          : handle({ method: req.method || 'GET', path: (req.url || '/').split('?')[0], authorization: req.headers.authorization, cookie: req.headers.cookie, body: Buffer.concat(chunks).toString('utf8') }, ctx)
+          : handle({ method: req.method || 'GET', path: (req.url || '/').split('?')[0], query: (req.url || '').split('?').slice(1).join('?'), authorization: req.headers.authorization, cookie: req.headers.cookie, body: Buffer.concat(chunks).toString('utf8') }, ctx)
       } catch (e: any) {
         // The reason goes to the server's log, not to whoever asked.
         console.error('jq-deck-server:', e?.message || e)
