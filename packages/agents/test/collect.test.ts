@@ -98,7 +98,7 @@ describe('snapshot and page', () => {
     const html = renderPage({ machine: 'm', generated_at: 'now', sessions: rows, host: null, bottleneck: { kind: 'none', reason: null } }, NOW)
     expect(html).toContain('&lt;b&gt;Merge?&lt;/b&gt;')
     expect(html).not.toContain('<b>Merge?</b>')
-    expect(html).toContain('Question text is off for this tree.')
+    expect(html).toContain('Question text is off for this folder')
     expect(html).not.toContain('Bottleneck')
     const slow = renderPage({ machine: 'm', generated_at: 'now', sessions: rows, host: null, bottleneck: { kind: 'unknown', reason: null } }, NOW)
     expect(slow).toContain('Could not tell')

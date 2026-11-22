@@ -19,7 +19,8 @@ import { randomBytes } from 'crypto'
 import { writeFileSync } from 'fs'
 import { createServer, type IncomingMessage } from 'http'
 import { snapshot, type Snapshot } from './collect.js'
-import { defaultConfigFile, readTurnCheckConfig, writeTurnCheckConfig } from './config.js'
+import { defaultConfigFile, readQuestionTrees, readTurnCheckConfig, writeQuestionTrees, writeTurnCheckConfig } from './config.js'
+import { applyQuestionsAction, parseQuestionsAction } from './questions.js'
 import { renderPage } from './page.js'
 import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { applyAction, parseAction } from './turn-check.js'
@@ -88,9 +89,22 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
   return a
 }
 
-/** `evidence` is asked for by the local page only: it holds command text. */
-const collect = (a: Args, evidence = false): Promise<Snapshot> =>
-  snapshot({ questionTrees: a.questionTrees, maxAgeDays: a.maxAgeDays, probe: a.probe, sample: a.sample, turnCheck: readTurnCheckConfig(a.configFile), evidence })
+/**
+ * `evidence` is asked for by the local page only: it holds command text.
+ *
+ * `forPage` adds the folders saved from the page's own button (questions.ts). It is set only
+ * where the snapshot is drawn on this machine's page. --watch and --json hand the snapshot
+ * to something else, and for them only --questions counts.
+ */
+const collect = (a: Args, evidence = false, forPage = false): Promise<Snapshot> =>
+  snapshot({
+    questionTrees: forPage ? [...new Set([...a.questionTrees, ...readQuestionTrees(a.configFile)])] : a.questionTrees,
+    maxAgeDays: a.maxAgeDays,
+    probe: a.probe,
+    sample: a.sample,
+    turnCheck: readTurnCheckConfig(a.configFile),
+    evidence,
+  })
 
 /**
  * Whether a POST may change the config. Three things must hold, because any web page a
@@ -190,15 +204,29 @@ export async function run(argv: string[]): Promise<void> {
         res.end()
         return
       }
+      if (req.method === 'POST' && req.url === '/questions' && a.manage) {
+        const form = await readForm(req)
+        if (!form || !allowedPost({ host: req.headers.host, origin: req.headers.origin }, a.port, token, form.token)) {
+          res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+          res.end('Refused. Reload the board and try again.')
+          return
+        }
+        const saved = readQuestionTrees(a.configFile)
+        const action = parseQuestionsAction(form, shown.trees, saved)
+        if (action) writeQuestionTrees(applyQuestionsAction(saved, action), a.configFile)
+        res.writeHead(303, { location: '/', 'cache-control': 'no-store' })
+        res.end()
+        return
+      }
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', allow: 'GET, HEAD' })
         res.end('Method not allowed.')
         return
       }
-      const snap = await collect(a, a.manage)
+      const snap = await collect(a, a.manage, true)
       shown = { trees: [...new Set(snap.sessions.map((r) => r.working_tree))], sessions: Object.fromEntries(snap.sessions.map((r) => [r.session_id, r.last_activity_at])) }
       const bar = toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile) })
-      const page = renderPage(snap, Date.now(), a.manage ? { token, config: readTurnCheckConfig(a.configFile) } : undefined, bar)
+      const page = renderPage(snap, Date.now(), a.manage ? { token, config: readTurnCheckConfig(a.configFile), questions: readQuestionTrees(a.configFile) } : undefined, bar)
       res.writeHead(200, headers)
       res.end(page)
     } catch (e: any) {
