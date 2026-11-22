@@ -10,7 +10,7 @@ import { parse } from '../src/cli.js'
 import { renderTeam } from '../src/page.js'
 import { sanitizeReport, type TeamReport } from '../src/report.js'
 import { reportUrl, send } from '../src/send.js'
-import { handle, startServer, type ServerContext } from '../src/server.js'
+import { SECURITY_HEADERS, handle, startServer, type ServerContext } from '../src/server.js'
 import { addMachine, addViewer, initStore, machineFor, readConfig, readReports, remove, viewerFor } from '../src/store.js'
 import { buildTeam, duration, freshness, visible } from '../src/team.js'
 import { DEFAULT_VIEW, parseView, select, viewHref, waitingRows } from '../src/view.js'
@@ -237,20 +237,40 @@ describe('the HTTP handler', () => {
     expect(handle({ method: 'DELETE', path: '/report', body: '' }, ctx).status).toBe(404)
   })
 
-  it('escapes what a machine sends, and loads nothing', () => {
+  it('escapes what a machine sends, runs no script, and loads only the four lights', () => {
     post(JSON.stringify(report([repo({ name: '<img src=x onerror=alert(1)>', remote: null })])))
     const page = handle({ method: 'GET', path: '/', cookie: `jq_deck=${viewer}`, body: '' }, ctx).body
-    expect(page).not.toContain('<img')
+    expect(page).not.toContain('<img src=x')
     expect(page).toContain('&lt;img')
-    // The page loads nothing and runs nothing. The only addresses on it are links: to the
-    // reader's own machine, and to a reported repository's own page.
-    expect(page).not.toMatch(/<script|<img|<iframe|<link rel="stylesheet"| src="/)
+    // The only things the page asks a browser to load are the four lights: one small image
+    // from each local tool's own address on the viewer's machine.
+    const lights = [4316, 4319, 4317, 4318].map((port) => `<span class="lamp" aria-hidden="true"><img src="http://127.0.0.1:${port}/jq-up.svg" alt="" width="10" height="10"></span>`)
+    for (const light of lights) expect(page).toContain(light)
+    const withoutLights = lights.reduce((text, light) => text.replace(light, ''), page)
+    expect(withoutLights).not.toMatch(/<script|<img|<iframe|<object|<embed|<link rel="stylesheet"| src="/)
     // The local tools' pages have Copy buttons and one script for them. This page has neither.
     expect(page).not.toMatch(/data-jqcopy|<button type="button"/)
     expect(page.replace(/http:\/\/127\.0\.0\.1:\d+/g, '').replace(/<a href="https:\/\/[a-z0-9][a-z0-9.-]*(\/[A-Za-z0-9._~-]+)+" target="_blank" rel="noopener noreferrer">/g, '')).not.toMatch(/https?:\/\//)
     expect(page).toContain('aria-label="JQ tools"')
-    expect(page).toContain('this page cannot see whether it is running')
+    // A red ring is "no answer", never "not running": the browser may have refused to look.
+    expect(page).toContain('A red ring means no answer. The tool may not be running there, may be a version from before these lights, or may have no team board address saved in <code>~/.jq/config.json</code>. Or your browser did not let this page look.')
+    expect(page).not.toContain('this page cannot see whether it is running')
     expect(renderTeam(buildTeam([], NOW), 'lee', 't')).toContain('None yet')
+  })
+
+  it('asks a browser for nothing when the lights are turned off', () => {
+    post(JSON.stringify(report()))
+    const page = handle({ method: 'GET', path: '/', cookie: `jq_deck=${viewer}`, body: '' }, { ...ctx, lights: false }).body
+    expect(page).not.toMatch(/<img|class="lamp"|jq-up\.svg/)
+    expect(page).toContain('this page cannot see whether it is running')
+    // The same when the page is built by a caller that does not ask for them.
+    expect(renderTeam(buildTeam([], NOW), 'lee', 't')).not.toContain('<img')
+  })
+
+  it('allows images from the four local tool addresses, and from nowhere else', () => {
+    const policy = SECURITY_HEADERS['content-security-policy']
+    expect(policy).toBe("default-src 'none'; style-src 'unsafe-inline'; img-src data: http://127.0.0.1:4316 http://127.0.0.1:4319 http://127.0.0.1:4317 http://127.0.0.1:4318; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+    expect(policy).not.toMatch(/script-src|connect-src|\*|https:/)
   })
 
   it('puts what needs a person in the tab title, the totals and the waiting list, and says when each question was asked', () => {
@@ -389,7 +409,7 @@ describe('the HTTP handler', () => {
     expect(get('q=nothing-like-it')).toContain('No report matches.')
     // What is typed into the search comes back only as escaped text.
     const hostile = get(`q=${encodeURIComponent('"><img src=x onerror=1>')}`)
-    expect(hostile).not.toContain('<img')
+    expect(hostile).not.toContain('<img src=x')
     expect(hostile).toContain('value="&quot;&gt;&lt;img src=x onerror=1&gt;"')
     // The view never reaches the JSON, and never widens what a viewer may see.
     const api = handle({ method: 'GET', path: '/api/team', query: 'filter=fix', authorization: `Bearer ${viewer}`, body: '' }, ctx)

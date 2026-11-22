@@ -12,7 +12,7 @@ import { writeFileSync } from 'fs'
 import { createServer } from 'http'
 import { BOARD, boardPosts, deriveThreads, waitingBoard } from './board.js'
 import { renderPage, type Report } from './page.js'
-import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
+import { LAMP_PATH, lampReply, announce, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { startUpdateCheck } from './update-check.js'
 import { readMailbox } from './read.js'
 
@@ -69,8 +69,15 @@ export function run(args: string[], version = 'dev'): void {
   }
   // Only here, where a person has started the page. --json and --html never ask.
   const update = startUpdateCheck('@point-seven-studio/jq-crosstalk', version, { say: (line) => console.log(`crosstalk: ${line}`) })
-  createServer((_req, res) => {
+  createServer((req, res) => {
     try {
+      // The light a team board shows for this tool (presence.ts). Answered only where a team board is set up.
+      if (req.url === LAMP_PATH) {
+        const lamp = lampReply()
+        res.writeHead(lamp.status, lamp.headers)
+        res.end(lamp.body)
+        return
+      }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
       res.end(renderPage(buildReport(parsed.root), toolbar({ here: 'crosstalk', running: readRunning(), team: readTeamUrl(), update: update(), copy: true })))
     } catch (e: any) {

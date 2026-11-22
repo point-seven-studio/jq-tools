@@ -180,6 +180,8 @@ The served page has a bar at the bottom with a link to each of the other JQ tool
 
 How a page knows what is running, without a network call: while a tool serves its page it keeps a small note in `~/.jq/running/` (the tool, its port, its process id), and removes it when it stops. The other pages read those notes and ignore one whose process is gone. The bar is as of the last page load. A page written with `--html`, or shown inside JQ Deck, has no bar.
 
+**A light on a team board.** When this machine has a team board's address saved (`"team"` in `~/.jq/config.json`), JQ Groundcrew answers one small image at `/jq-up.svg`, so that board can show whether JQ Groundcrew answered the viewer's browser. The image says nothing about the machine. With no team board saved, that address answers 404.
+
 ## Related tools
 
 - [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck): all of these on one local page, from one command.

@@ -144,6 +144,42 @@ export function readTeamUrl(file = process.env.JQ_CONFIG || path.join(os.homedir
   }
 }
 
+/* ── Lights on the team board ────────────────────────────────────────── */
+
+/**
+ * The team board is served from somewhere else, so it cannot see a viewer's computer. A
+ * light is the one thing it can do without a script: it asks the viewer's own browser for a
+ * tiny image from each local tool's address. The image is a green disc with a tick. Under
+ * it sits a red ring. If the image arrives, it covers the ring; if it does not, the ring
+ * shows.
+ *
+ * So green means "that address answered just now". Red means "no answer", which is either
+ * that the tool is not running, or that the browser did not let the page look (Chrome asks
+ * permission before a public site may reach the viewer's own machine). Red must never be
+ * worded as "not running".
+ *
+ * A local tool answers this address only on a machine that has a team board's address in
+ * ~/.jq/config.json. Any web page can ask a browser for this image, so on a machine with no
+ * team board the tool answers 404, the same as for any other unknown address.
+ */
+export const LAMP_PATH = '/jq-up.svg'
+export const LAMP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12"><circle cx="6" cy="6" r="6" fill="#2fa67a"/><path d="M3.3 6.3l1.9 1.9 3.6-4.1" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+/** What a local tool answers on LAMP_PATH: the image where a team board is set up, 404 where it is not. */
+export function lampReply(configFile?: string): { status: number; headers: Record<string, string>; body: string } {
+  if (!readTeamUrl(configFile)) return { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }, body: 'not found' }
+  return {
+    status: 200,
+    // Never cached, so the light is about now. Readable as an image by a page on another site, and nothing more.
+    headers: { 'content-type': 'image/svg+xml', 'cache-control': 'no-store', 'cross-origin-resource-policy': 'cross-origin', 'x-content-type-options': 'nosniff' },
+    body: LAMP_SVG,
+  }
+}
+
+/** The sources a content policy must allow for the lights: each local tool's own address, and no other. */
+export const LAMP_IMG_SOURCES = TOOLS.map((t) => `http://127.0.0.1:${t.port}`).join(' ')
+
 /* ── Copy buttons ────────────────────────────────────────────────────── */
 
 /**
@@ -187,6 +223,8 @@ body{padding-bottom:64px}
 .jqbar{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;padding:8px 16px;font:13px/1.4 system-ui,sans-serif;background:var(--card,Canvas);color:var(--fg,CanvasText);border-top:1px solid var(--line,GrayText)}
 .jqbar a{color:var(--link,LinkText)}
 .jqbar .here{font-weight:700}
+.jqbar .lamp{position:relative;display:inline-block;box-sizing:border-box;width:10px;height:10px;margin-right:6px;border:2px solid var(--bad,#c0392b);border-radius:50%;vertical-align:-1px}
+.jqbar .lamp img{position:absolute;left:-2px;top:-2px;width:10px;height:10px;display:block;border-radius:50%}
 .jqbar details[open]{order:-1;flex-basis:100%}
 .jqbar summary{cursor:pointer;color:var(--mut,GrayText);list-style:none;display:inline-block;padding:2px 0}
 .jqbar summary::-webkit-details-marker{display:none}
@@ -214,6 +252,8 @@ export interface ToolbarOptions {
   update?: { installed: string; latest: string; command: string } | null
   /** True on a page that carries COPY_SCRIPT_TAG: each command in the bar then gets a Copy button. */
   copy?: boolean
+  /** On a page served from elsewhere: put a light beside each local tool (see LAMP_PATH). Needs LAMP_IMG_SOURCES in the page's content policy. */
+  lamps?: boolean
 }
 
 const local = (port: number) => `http://127.0.0.1:${port}`
@@ -224,7 +264,12 @@ function toolItem(t: ToolInfo, o: ToolbarOptions): string {
   if (o.here === t.id) return `<span class="here" aria-current="page">${esc(t.name)}</span>`
   const start = `<p>To start it: ${command(t.run, o)}</p>`
   if (o.running === null) {
-    // Served from elsewhere: the page cannot tell, so it says where the tool would be.
+    // Served from elsewhere: the page cannot see the viewer's machine. With lights, the viewer's own
+    // browser asks that address for one small image, and the light says whether it answered.
+    if (o.lamps) {
+      const lamp = `<span class="lamp" aria-hidden="true"><img src="${local(t.port)}${LAMP_PATH}" alt="" width="10" height="10"></span>`
+      return `<details><summary>${lamp}${esc(t.name)} <small>on your computer</small></summary><div><p>${esc(t.name)} shows ${esc(t.what)}. It runs on your own computer.</p><p><b>The light:</b> green with a tick means <a href="${local(t.port)}">${local(t.port)}</a> answered your browser just now. A red ring means no answer. The tool may not be running there, may be a version from before these lights, or may have no team board address saved in <code>~/.jq/config.json</code>. Or your browser did not let this page look.</p>${start}</div></details>`
+    }
     return `<details><summary>${esc(t.name)} <small>on your computer</small></summary><div><p>${esc(t.name)} shows ${esc(t.what)}. It runs on your own computer, and this page cannot see whether it is running there.</p><p>If it is, it is at <a href="${local(t.port)}">${local(t.port)}</a>.</p>${start}</div></details>`
   }
   const port = o.running[t.id]

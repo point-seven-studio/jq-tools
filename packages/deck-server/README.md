@@ -76,7 +76,7 @@ The data folder is `/data`. Mount a volume there, or a restart forgets every tok
 - **A machine not heard from for 5 minutes is not counted.** Its rows stay, greyed, marked "not current", and are never listed as waiting or live. After a day its rows are hidden and it is listed as silent. Old numbers never look current.
 - **Links.** A repository's remote links to its own page. Each waiting line has a link to JQ Deck on the reader's own computer (`http://127.0.0.1:4316/?find=NAME`), which shows that repository there and can open its folder. That link is only any use at the machine the line names, while JQ Deck runs there. The board cannot open a session itself: it holds no folder path and no session id.
 - **Unknown is never shown as zero.** No inbox, no setup check and no reported wait each show a dash with the reason beside it.
-- The page reloads every minute. It is read-only: there is no way to answer a session from it. It runs no script, so the commands in its bar have no Copy button, unlike the local tools' pages. It follows the reader's light or dark setting.
+- The page reloads every minute. It is read-only: there is no way to answer a session from it. It runs no script, so the commands in its bar have no Copy button, unlike the local tools' pages. The one thing it loads is the four lights in its bar; see The lights below. It follows the reader's light or dark setting.
 
 `GET /api/team` returns the same as JSON, with `Authorization: Bearer <viewer token>`.
 
@@ -111,7 +111,17 @@ import { handle, buildTeam, readReports, readConfig, sanitizeReport } from '@poi
 
 ## Links to the other tools
 
-The team page has a bar at the bottom naming the four local tools. A page served from a server cannot see a viewer's computer, so it does not say whether a tool is running there. Each name opens a short note with the address the tool would be at on the viewer's own machine (`http://127.0.0.1:` and its usual port) and the command that starts it. The page still loads nothing and runs no script.
+The team page has a bar at the bottom naming the four local tools. A page served from a server cannot see a viewer's computer. Each name opens a short note with the address the tool would be at on the viewer's own machine (`http://127.0.0.1:` and its usual port) and the command that starts it.
+
+### The lights
+
+From 0.6.0 each name has a light. The page asks the viewer's own browser for one small image from each tool's address on the viewer's own machine. A green disc with a tick means that address answered just now. A red ring means no answer.
+
+- **Red is not "not running".** It means no answer, and there are four ways to get none: the tool is not running; it is a version from before the lights; that machine has no team board address saved in `~/.jq/config.json`; or the browser did not let the page look. Chrome asks permission before a public site may reach the viewer's own machine, and some browsers refuse outright.
+- **A tool answers only where a team board is set up.** Any web page can ask a browser for this image, so on a machine with no `team` address a tool answers 404, as it does for any unknown address. The image says nothing about the machine.
+- **The page still runs no script.** The lights are four images. The content policy allows images from exactly those four addresses and from nowhere else.
+- **The viewer's browser console will show a failed request for each red light.** That is the question going unanswered, not a fault.
+- `jq-deck-server serve --no-lights` turns them off. The page then asks a browser for nothing, as before.
 
 ## Related tools
 

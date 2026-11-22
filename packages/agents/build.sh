@@ -31,7 +31,9 @@ if [ "${1:-}" = "--check" ]; then
   # registry for the update check. A third means something new can leave the machine and
   # the README is now wrong.
   HOSTS="$(grep -o -E "https?://[a-zA-Z0-9./_-]+" "$HERE/dist/jq-agents.mjs" | grep -v -E "^http://127\.0\.0\.1" | sort -u)"
-  [ "$HOSTS" = "$(printf 'https://api.anthropic.com/\nhttps://registry.npmjs.org')" ] || { echo "error: unexpected outbound address in the bundle:"; echo "$HOSTS"; exit 1; } >&2
+  # The third line is not a destination: it is the namespace name inside the small SVG
+  # image this tool answers for a team board's light (presence.ts). Nothing fetches it.
+  [ "$HOSTS" = "$(printf 'http://www.w3.org/2000/svg\nhttps://api.anthropic.com/\nhttps://registry.npmjs.org')" ] || { echo "error: unexpected outbound address in the bundle:"; echo "$HOSTS"; exit 1; } >&2
   grep -q "Apache License" "$HERE/LICENSE" || { echo "error: the package must ship its licence" >&2; exit 1; }
   [ "$(node "$HERE/dist/jq-agents.mjs" --version)" = "$VERSION" ] || { echo "error: wrong version" >&2; exit 1; }
   T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT

@@ -11,7 +11,7 @@ import path from 'path'
 import { FAIL_ON_LEVELS, failing, layerSummary, runChecks, summarize, type FailOn } from './groundcrew-core.js'
 import { canRead, gather, tilde } from './groundcrew-gather.js'
 import { renderPage, type Report } from './groundcrew-page.js'
-import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
+import { LAMP_PATH, lampReply, announce, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { startUpdateCheck } from './update-check.js'
 
 export const DEFAULT_PORT = 4317
@@ -83,6 +83,12 @@ export function runLocal(parsed: Parsed, version = 'dev'): number {
   // Only here, where a person has started the page. --json and --html never ask.
   const update = startUpdateCheck('@point-seven-studio/jq-groundcrew', version, { say: (line) => console.log(`jq-groundcrew: ${line}`) })
   createServer((request, response) => {
+    // The light a team board shows for this tool (presence.ts). Answered only where a team board is set up.
+    if (request.url === LAMP_PATH) {
+      const lamp = lampReply()
+      response.writeHead(lamp.status, lamp.headers).end(lamp.body)
+      return
+    }
     if (request.url !== '/') {
       response.writeHead(404).end('not found')
       return

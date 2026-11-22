@@ -15,7 +15,7 @@ export interface Parsed {
 }
 
 const VALUE_OPTIONS = new Set(['--dir', '--who', '--repos', '--port', '--host', '--url'])
-const FLAGS = new Set(['--plain-http'])
+const FLAGS = new Set(['--plain-http', '--no-lights'])
 
 export function parse(argv: string[]): Parsed {
   const [command = '', ...rest] = argv
@@ -99,7 +99,7 @@ export async function run(argv: string[], version: string, env: Record<string, s
       // Off this machine the sign-in cookie is marked Secure, so it only works
       // behind HTTPS. --plain-http is the explicit way to give that up.
       const secureCookie = !local && !p.flags.has('--plain-http')
-      startServer({ dir, version, secureCookie }, port, host, (bound) => {
+      startServer({ dir, version, secureCookie, lights: !p.flags.has('--no-lights') }, port, host, (bound) => {
         console.log(`jq-deck-server: http://${host}:${bound} (Ctrl-C to stop), data in ${dir}`)
         if (!local) console.log(secureCookie ? 'jq-deck-server: reachable from other machines. Put HTTPS in front of it: sign-in needs it.' : 'jq-deck-server: WARNING: reachable from other machines over plain HTTP. Tokens travel in the clear.')
       })

@@ -11,6 +11,7 @@
  */
 import { createServer, type Server } from 'http'
 import { renderLogin, renderTeam } from './page.js'
+import { LAMP_IMG_SOURCES } from './presence.js'
 import { MAX_BODY_BYTES, sanitizeReport } from './report.js'
 import { machineFor, readConfig, readReports, saveReport, viewerFor, type Viewer } from './store.js'
 import { buildTeam } from './team.js'
@@ -37,6 +38,8 @@ export interface ServerContext {
   version: string
   /** False only when serving plain HTTP on this machine. */
   secureCookie: boolean
+  /** False with --no-lights: the board then asks a viewer's browser for nothing, as before 0.6.0. */
+  lights?: boolean
   now?: () => number
 }
 
@@ -102,19 +105,23 @@ export function handle(req: Req, ctx: ServerContext): Res {
     const viewer: Viewer | null = viewerFor(config, cookieToken(req.cookie)) ?? (api ? viewerFor(config, bearer(req.authorization)) : null)
     if (!viewer) return api ? text(401, 'a viewer token is needed') : { status: 303, headers: { location: '/login' }, body: '' }
     const team = buildTeam(readReports(ctx.dir, config), now, viewer)
-    return api ? { status: 200, headers: JSON_TYPE, body: JSON.stringify(team, null, 2) } : { status: 200, headers: HTML, body: renderTeam(team, viewer.name, ctx.version, parseView(req.query)) }
+    return api ? { status: 200, headers: JSON_TYPE, body: JSON.stringify(team, null, 2) } : { status: 200, headers: HTML, body: renderTeam(team, viewer.name, ctx.version, parseView(req.query), ctx.lights !== false) }
   }
 
   return text(404, 'not found')
 }
 
-/** Headers on every reply: never cached, never framed, and the page may load nothing. */
+/**
+ * Headers on every reply: never cached, never framed. The page may load one kind of thing:
+ * the light for each local tool, an image from the viewer's own machine at that tool's own
+ * address (presence.ts). No script, no other image, no other address.
+ */
 export const SECURITY_HEADERS: Record<string, string> = {
   'cache-control': 'no-store',
   'x-frame-options': 'DENY',
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
-  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; img-src data: ${LAMP_IMG_SOURCES}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
 }
 
 export function startServer(ctx: ServerContext, port: number, host: string, onListen?: (port: number) => void): Server {
