@@ -3,7 +3,7 @@
  * script, no outside request. Every value from a message is escaped: message text
  * is written by other sessions and must never run as markup.
  */
-import { TOOLBAR_CSS } from './presence.js'
+import { COPY_CSS, COPY_SCRIPT_TAG, TOOLBAR_CSS } from './presence.js'
 import type { Board, BoardPost, MessageSummary, Thread, WaitingBoard } from './board.js'
 
 export interface Report {
@@ -82,12 +82,12 @@ details{border-top:1px solid var(--line)}summary{cursor:pointer;padding:8px 12px
 .subj{font-weight:500}.file{font-family:ui-monospace,monospace;margin:0;padding:0 12px;word-break:break-all}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--well);margin:8px 12px 12px;padding:10px;border-radius:8px;font-size:12px;max-height:420px;overflow:auto}
 .state{font-size:12px}.state.open{color:var(--ok)}.state.expired{color:var(--bad)}.state.closed{color:var(--mut)}
-${bar ? TOOLBAR_CSS : ''}</style></head><body><main>
+${bar ? TOOLBAR_CSS + COPY_CSS : ''}</style></head><body><main>
 <h1>Crosstalk</h1>
 <p class="note">${esc(r.mailbox)} · ${r.total} messages · read ${esc(r.generated_at)}. Refresh to read again. This page is read-only.</p>
 <h2>Waiting</h2><p class="lead">${esc(r.waiting.headline)}</p>${waiting}
 <h2>Board</h2><p class="lead">${esc(r.board.headline)}</p>${r.board.open.map((p) => post(p, r.bodies)).join('')}
 ${r.board.closed.length ? `<details class="card"><summary>${r.board.closed.length} closed</summary>${r.board.closed.map((p) => post(p, r.bodies)).join('')}</details>` : ''}
 <h2>Threads</h2><p class="note">The ${r.threads.length} with the newest activity. Where a message carries no thread id, threads are worked out from replies that cite a message or reuse its subject, so some related mail shows as separate.</p>${threads}
-</main>${bar}</body></html>`
+</main>${bar}${bar ? COPY_SCRIPT_TAG : ''}</body></html>`
 }

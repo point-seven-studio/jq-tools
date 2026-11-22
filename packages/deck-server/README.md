@@ -76,7 +76,7 @@ The data folder is `/data`. Mount a volume there, or a restart forgets every tok
 - **A machine not heard from for 5 minutes is not counted.** Its rows stay, greyed, marked "not current", and are never listed as waiting or live. After a day its rows are hidden and it is listed as silent. Old numbers never look current.
 - **Links.** A repository's remote links to its own page. Each waiting line has a link to JQ Deck on the reader's own computer (`http://127.0.0.1:4316/?find=NAME`), which shows that repository there and can open its folder. That link is only any use at the machine the line names, while JQ Deck runs there. The board cannot open a session itself: it holds no folder path and no session id.
 - **Unknown is never shown as zero.** No inbox, no setup check and no reported wait each show a dash with the reason beside it.
-- The page reloads every minute. It is read-only: there is no way to answer a session from it. It runs no script. It follows the reader's light or dark setting.
+- The page reloads every minute. It is read-only: there is no way to answer a session from it. It runs no script, so the commands in its bar have no Copy button, unlike the local tools' pages. It follows the reader's light or dark setting.
 
 `GET /api/team` returns the same as JSON, with `Authorization: Bearer <viewer token>`.
 

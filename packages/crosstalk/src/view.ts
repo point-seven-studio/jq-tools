@@ -72,7 +72,7 @@ export function run(args: string[], version = 'dev'): void {
   createServer((_req, res) => {
     try {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
-      res.end(renderPage(buildReport(parsed.root), toolbar({ here: 'crosstalk', running: readRunning(), team: readTeamUrl(), update: update() })))
+      res.end(renderPage(buildReport(parsed.root), toolbar({ here: 'crosstalk', running: readRunning(), team: readTeamUrl(), update: update(), copy: true })))
     } catch (e: any) {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       res.end(String(e?.message || e))

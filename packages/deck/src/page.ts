@@ -1,10 +1,10 @@
 /**
  * JQ Deck: the shell page. A header, four tabs, and under them either the
- * overview table or one tool's own page in a frame. One HTML string, no script,
+ * overview table or one tool's own page in a frame. One HTML string, one script (the Copy button's, presence.ts),
  * no outside request. Every value is escaped: names and paths come from disk.
  */
 import type { Overview, RepoRow } from './deck.js'
-import { TOOLBAR_CSS } from './presence.js'
+import { COPY_CSS, COPY_SCRIPT_TAG, TOOLBAR_CSS, copyable } from './presence.js'
 
 export const TABS = ['overview', 'sessions', 'setup', 'mail'] as const
 export type Tab = (typeof TABS)[number]
@@ -80,7 +80,7 @@ function setupTab(o: Overview, asked: string | null): string {
 function mailTab(o: Overview): string {
   if (o.mail_note) return `<p class="card pad">The mailbox at <code>${esc(o.mailbox)}</code> could not be read: ${esc(o.mail_note)}</p>`
   if (!o.mailbox) {
-    return `<div class="card pad"><p>No mailbox found. A mailbox lets sessions send each other briefs and questions.</p><p>To make one, with one name per session:</p><pre>npx @point-seven-studio/jq-crosstalk init ~/crosstalk api web</pre><p>Then start this page with <code>--mailbox ~/crosstalk</code>, or set <code>$CROSSTALK_DIR</code>.</p></div>`
+    return `<div class="card pad"><p>No mailbox found. A mailbox lets sessions send each other briefs and questions.</p><p>To make one, with one name per session:</p><p>${copyable('npx @point-seven-studio/jq-crosstalk init ~/crosstalk api web')}</p><p>Then start this page with <code>--mailbox ~/crosstalk</code>, or set <code>$CROSSTALK_DIR</code>.</p></div>`
   }
   return '<iframe title="Mailbox" src="/raw/mail"></iframe>'
 }
@@ -125,7 +125,7 @@ tr.found th,tr.found td{background:var(--well);box-shadow:inset 0 2px var(--warn
 .open{display:inline-block;font-weight:400;font-size:12px;margin-top:2px}
 code,pre{font:12px ui-monospace,monospace;background:var(--well);border-radius:4px;padding:1px 4px}pre{padding:10px;overflow-x:auto}
 @media (max-width:640px){thead{display:none}tr{display:block;border-top:1px solid var(--line);padding:8px 0}th,td{display:block;border:0;padding:3px 12px}td::before{content:attr(data-l) ": ";color:var(--mut);font-size:12px}}
-${bar ? TOOLBAR_CSS : ''}</style></head><body>
+${COPY_CSS}${bar ? TOOLBAR_CSS : ''}</style></head><body>
 <header>
 <h1>JQ Deck</h1>
 <p class="head">${esc(o.headline)}</p>
@@ -134,5 +134,5 @@ ${bar ? TOOLBAR_CSS : ''}</style></head><body>
 </header>
 <main>${body}</main>
 <footer class="mut" style="max-width:1000px;width:100%;margin:0 auto;padding:0 16px 16px">JQ Deck ${esc(version)} · this machine only</footer>
-${bar}</body></html>`
+${bar}${COPY_SCRIPT_TAG}</body></html>`
 }

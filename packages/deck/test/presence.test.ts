@@ -4,6 +4,8 @@ import os from 'os'
 import path from 'path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { TOOLS, TOOLBAR_CSS, announce, readRunning, readTeamUrl, toolbar } from '../src/presence.js'
+import { COPY_SCRIPT, COPY_SCRIPT_CSP, COPY_SCRIPT_SHA256, COPY_SCRIPT_TAG, copyable } from '../src/presence.js'
+import { createHash } from 'crypto'
 
 let dir: string
 beforeEach(() => {
@@ -150,5 +152,36 @@ describe('the ports', () => {
   it('for JQ Deck is the one it serves on by default', async () => {
     const { DEFAULT_PORT } = await import('../src/cli.js')
     expect(TOOLS.find((t) => t.id === 'deck')!.port).toBe(DEFAULT_PORT)
+  })
+})
+
+describe('copy buttons', () => {
+  const none = { deck: null, agents: null, groundcrew: null, crosstalk: null }
+  it('names the script by a hash that is really its own', () => {
+    expect(createHash('sha256').update(COPY_SCRIPT).digest('base64')).toBe(COPY_SCRIPT_SHA256)
+    expect(COPY_SCRIPT_CSP).toBe(`'sha256-${COPY_SCRIPT_SHA256}'`)
+    expect(COPY_SCRIPT_TAG).toBe(`<script>${COPY_SCRIPT}</script>`)
+  })
+  it('has a script that copies and does nothing else', () => {
+    // It reads the text beside the pressed button and writes to the clipboard. It makes no request.
+    expect(COPY_SCRIPT).toContain('navigator.clipboard.writeText')
+    expect(COPY_SCRIPT).not.toMatch(/fetch|XMLHttpRequest|WebSocket|sendBeacon|import\(|eval\(|innerHTML|location|cookie|localStorage|src\s*=|https?:/)
+  })
+  it('writes each button hidden, so there is no dead control where the script cannot run', () => {
+    expect(copyable('npx some-tool --flag "a b"')).toBe('<span class="jqcp"><code>npx some-tool --flag &quot;a b&quot;</code><button type="button" data-jqcopy hidden aria-label="Copy this command">Copy</button></span>')
+    expect(copyable('<img src=x>')).not.toContain('<img')
+    expect(COPY_SCRIPT).toContain('hidden=false')
+  })
+  it('puts a button on each command in the bar only when the page says it can', () => {
+    const update = { installed: '0.4.1', latest: '0.4.2', command: 'npm install -g some-tool@latest' }
+    const withCopy = toolbar({ here: 'deck', running: none, update, copy: true })
+    // Three tools not running, the team board not set up, and the update: five commands.
+    expect(withCopy.match(/data-jqcopy/g)).toHaveLength(5)
+    expect(withCopy).toContain('<code>npm install -g some-tool@latest</code><button type="button" data-jqcopy hidden')
+    const plain = toolbar({ here: 'deck', running: none, update })
+    expect(plain).not.toContain('data-jqcopy')
+    expect(plain).not.toContain('<button')
+    // The team board is served from elsewhere and runs no script: its bar never has one.
+    expect(toolbar({ here: 'team', running: null })).not.toMatch(/data-jqcopy|<button|<script/)
   })
 })

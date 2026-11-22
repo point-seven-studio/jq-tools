@@ -1,6 +1,6 @@
 {
   "name": "@point-seven-studio/jq-deck",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "One command, one local page: every Claude Code session on your machine, the setup check for each repository, and the mailbox between sessions. Read-only; sends nothing anywhere. Unofficial; not affiliated with or endorsed by Anthropic.",
   "bin": {
     "jq-deck": "dist/jq-deck.mjs"

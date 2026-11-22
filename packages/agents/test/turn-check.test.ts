@@ -11,6 +11,7 @@ import type { TranscriptRecord } from '../src/agent-status.js'
 import { buildStatusRow } from '../src/agent-status.js'
 import { allowedPost } from '../src/cli.js'
 import { renderPage } from '../src/page.js'
+import { COPY_SCRIPT_TAG } from '../src/presence.js'
 import { EMPTY_CONFIG, applyAction, deriveTurnCheckDetail, isCodePath, parseAction, parseConfig, ruleText, rulesFor, shellEdit, shellSegments, type TurnCheckConfig } from '../src/turn-check.js'
 
 describe('shellEdit: a shell command that changes code', () => {
@@ -189,7 +190,9 @@ describe('the page', () => {
   it('shows the label and nothing to press when it is not the local server', () => {
     const html = renderPage(snap, Date.parse(snap.generated_at))
     expect(html).toContain('stopped without running a check')
-    expect(html).not.toMatch(/<form|<button|Why, and is it wrong/)
+    expect(html).not.toMatch(/<form|Why, and is it wrong/)
+    // The only buttons a page without forms may hold are Copy buttons, hidden until its script shows them.
+    expect(html.replace(/<button type="button" data-jqcopy hidden aria-label="Copy this command">Copy<\/button>/g, '')).not.toContain('<button')
     expect(html).not.toContain('make verify')
   })
   it('offers each correction, with the token, when it is', () => {
@@ -199,7 +202,8 @@ describe('the page', () => {
     expect(html).toContain('&quot;echo&quot; does not edit code here')
     for (const label of ['Dismiss this one', 'Never label this tree', 'Remove', 'Label it again', 'Undo']) expect(html).toContain(`>${label}</button>`)
     expect(html.match(/name="token" value="tok123"/g)!.length).toBe(html.match(/<form /g)!.length)
-    expect(html).not.toMatch(/<script/)
+    expect(html.match(/<script/g)).toHaveLength(1)
+    expect(html).toContain(COPY_SCRIPT_TAG)
   })
   it('escapes command text and rule text', () => {
     const html = renderPage(snap, Date.parse(snap.generated_at), { token: 't', config })

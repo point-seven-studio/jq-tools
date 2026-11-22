@@ -22,7 +22,7 @@ import { snapshot, type Snapshot } from './collect.js'
 import { defaultConfigFile, readQuestionTrees, readTurnCheckConfig, writeQuestionTrees, writeTurnCheckConfig } from './config.js'
 import { applyQuestionsAction, parseQuestionsAction } from './questions.js'
 import { renderPage } from './page.js'
-import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
+import { COPY_SCRIPT_CSP, announce, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { startUpdateCheck } from './update-check.js'
 import { applyAction, parseAction } from './turn-check.js'
 
@@ -188,8 +188,9 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
   const headers = {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
-    // No script, no outside resource, forms only to this server, and no framing by another page.
-    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    // One script, named by its hash: the Copy button's (presence.ts). No other script, no outside
+    // resource, forms only to this server, and no framing by another page.
+    'content-security-policy': `default-src 'none'; script-src ${COPY_SCRIPT_CSP}; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
     'x-content-type-options': 'nosniff',
   }
   createServer(async (req, res) => {
@@ -229,7 +230,7 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
       }
       const snap = await collect(a, a.manage, true)
       shown = { trees: [...new Set(snap.sessions.map((r) => r.working_tree))], sessions: Object.fromEntries(snap.sessions.map((r) => [r.session_id, r.last_activity_at])) }
-      const bar = toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() })
+      const bar = toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update(), copy: true })
       const page = renderPage(snap, Date.now(), a.manage ? { token, config: readTurnCheckConfig(a.configFile), questions: readQuestionTrees(a.configFile) } : undefined, bar)
       res.writeHead(200, headers)
       res.end(page)

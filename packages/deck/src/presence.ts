@@ -144,6 +144,41 @@ export function readTeamUrl(file = process.env.JQ_CONFIG || path.join(os.homedir
   }
 }
 
+/* ── Copy buttons ────────────────────────────────────────────────────── */
+
+/**
+ * The one script a local JQ page runs. It copies the text of a command to the clipboard
+ * when its Copy button is pressed, and does nothing else: it reads no other part of the
+ * page and makes no request. A page that sets a content policy allows this script by its
+ * hash (COPY_SCRIPT_CSP), so no other script can run there.
+ *
+ * The buttons are written hidden and this script shows them. Where the script cannot run,
+ * there is no dead button, and the command can still be selected by hand.
+ *
+ * The team board (jq-deck-server) does not use it: that page runs no script at all.
+ */
+export const COPY_SCRIPT = `document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-jqcopy]'):null;if(!b)return;var c=b.previousElementSibling,t=c?c.textContent:'';function done(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1600)}function old(){var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(x){}a.remove();done()}if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(done,old)}else{old()}});for(var n=document.querySelectorAll('button[data-jqcopy]'),i=0;i<n.length;i++)n[i].hidden=false;`
+
+/** SHA-256 of COPY_SCRIPT, base64. A test recomputes it, so the two cannot drift apart. */
+export const COPY_SCRIPT_SHA256 = 'T57LzIgV1VkS+ha6PSVZ1odK1HAHl6V3rvrbmRPNs6E='
+/** The source to add to a content policy's script-src so that this script, and only it, may run. */
+export const COPY_SCRIPT_CSP = `'sha256-${COPY_SCRIPT_SHA256}'`
+/** Put this once, just before </body>, on a page that shows a command. */
+export const COPY_SCRIPT_TAG = `<script>${COPY_SCRIPT}</script>`
+
+export const COPY_CSS = `
+.jqcp{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:100%}
+.jqcp code{user-select:all;-webkit-user-select:all}
+.jqcp button{font:600 11px system-ui,sans-serif;line-height:1;padding:3px 8px;min-height:22px;border:1px solid var(--line,GrayText);border-radius:5px;background:var(--card,Canvas);color:var(--fg,CanvasText);cursor:pointer}
+.jqcp button:hover{border-color:var(--mut,GrayText)}
+.jqcp button:focus-visible{outline:2px solid var(--link,LinkText);outline-offset:2px}
+`
+
+/** A command with a Copy button beside it. The button is hidden until COPY_SCRIPT shows it. */
+export function copyable(text: string): string {
+  return `<span class="jqcp"><code>${esc(text)}</code><button type="button" data-jqcopy hidden aria-label="Copy this command">Copy</button></span>`
+}
+
 /* ── The bar ─────────────────────────────────────────────────────────── */
 
 /** Works on every JQ page: each defines these colours, and the fallbacks cover one that does not. */
@@ -177,13 +212,17 @@ export interface ToolbarOptions {
   team?: string | null
   /** A newer version of the tool serving this page, when one is known (update-check.ts). */
   update?: { installed: string; latest: string; command: string } | null
+  /** True on a page that carries COPY_SCRIPT_TAG: each command in the bar then gets a Copy button. */
+  copy?: boolean
 }
 
 const local = (port: number) => `http://127.0.0.1:${port}`
+/** A command in the bar: with a Copy button where the page can run one, plain where it cannot. */
+const command = (text: string, o: ToolbarOptions) => (o.copy ? copyable(text) : `<code>${esc(text)}</code>`)
 
 function toolItem(t: ToolInfo, o: ToolbarOptions): string {
   if (o.here === t.id) return `<span class="here" aria-current="page">${esc(t.name)}</span>`
-  const start = `<p>To start it: <code>${esc(t.run)}</code></p>`
+  const start = `<p>To start it: ${command(t.run, o)}</p>`
   if (o.running === null) {
     // Served from elsewhere: the page cannot tell, so it says where the tool would be.
     return `<details><summary>${esc(t.name)} <small>on your computer</small></summary><div><p>${esc(t.name)} shows ${esc(t.what)}. It runs on your own computer, and this page cannot see whether it is running there.</p><p>If it is, it is at <a href="${local(t.port)}">${local(t.port)}</a>.</p>${start}</div></details>`
@@ -196,13 +235,13 @@ function toolItem(t: ToolInfo, o: ToolbarOptions): string {
 function teamItem(o: ToolbarOptions): string {
   if (o.here === 'team') return '<span class="here" aria-current="page">Team board</span>'
   if (o.team) return `<a href="${esc(o.team)}" title="every machine on the team, on one page">Team board</a>`
-  return '<details><summary>Team board <small>not set up</small></summary><div><p>A team board shows every machine on a team on one page. This machine has no address for one.</p><p>If your team has one, add a <code>"team"</code> line holding its address to <code>~/.jq/config.json</code>.</p><p>To host one: <code>npx @point-seven-studio/jq-deck-server</code></p></div></details>'
+  return '<details><summary>Team board <small>not set up</small></summary><div><p>A team board shows every machine on a team on one page. This machine has no address for one.</p><p>If your team has one, add a <code>"team"</code> line holding its address to <code>~/.jq/config.json</code>.</p><p>To host one: ' + command('npx @point-seven-studio/jq-deck-server', o) + '</p></div></details>'
 }
 
 function updateItem(o: ToolbarOptions): string {
   if (!o.update) return ''
   const u = o.update
-  return `<details><summary>Update <small>${esc(u.latest)} is out</small></summary><div><p>This is ${esc(u.installed)}. Version ${esc(u.latest)} is on npm.</p><p>To update: <code>${esc(u.command)}</code></p><p>Once a day this tool asks npm for the latest version number, and sends nothing else. To turn that off, start it with <code>--no-update-check</code>.</p></div></details>`
+  return `<details><summary>Update <small>${esc(u.latest)} is out</small></summary><div><p>This is ${esc(u.installed)}. Version ${esc(u.latest)} is on npm.</p><p>To update: ${command(u.command, o)}</p><p>Once a day this tool asks npm for the latest version number, and sends nothing else. To turn that off, start it with <code>--no-update-check</code>.</p></div></details>`
 }
 
 /** The bar's HTML. Put TOOLBAR_CSS in the page's style, and this just before </body>. */

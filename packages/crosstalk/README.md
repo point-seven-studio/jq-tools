@@ -147,6 +147,12 @@ The body, in markdown.
 - No access control. Anyone who can write to the folder can send as any name, except a name with a key in `registry/signers.txt` (see Signed mail, and its limit).
 - Threads are exact for mail sent with this tool. For hand-written mail they are worked out from citations and subjects, which is a guess.
 
+## Copy buttons
+
+Wherever a page shows a command to run, there is a **Copy** button beside it: in the bar at the foot of the page, and nowhere else on this page yet.
+
+That button is the one script the page runs. It copies the command beside the button you pressed and does nothing else: it reads no other part of the page and makes no request. A page written with `--html` or shown inside JQ Deck has no bar, and so no script. Where the script cannot run, the buttons stay hidden and the command can be selected by hand.
+
 ## The update check
 
 When you start `crosstalk view` in a terminal to open its page, it asks npm once a day whether a newer version exists. If there is one, it prints one line and shows "Update" in the bar at the foot of the page, with the command to run. It installs nothing.

@@ -1,9 +1,9 @@
 /**
  * The local board: every session on this machine, grouped by working tree.
- * One HTML string, no script, no outside request. Question text comes from a
+ * One HTML string, one script (the Copy button's, presence.ts), no outside request. Question text comes from a
  * session's own output, so every value is escaped.
  */
-import { TOOLBAR_CSS } from './presence.js'
+import { COPY_CSS, COPY_SCRIPT_TAG, TOOLBAR_CSS, copyable } from './presence.js'
 import { deriveAttention, type AgentStatusRow } from './agent-status.js'
 import type { Snapshot } from './collect.js'
 import { ruleText, type TurnCheckConfig, type TurnEvidence } from './turn-check.js'
@@ -82,10 +82,10 @@ const form = (m: Manage, fields: Record<string, string>, label: string, action =
  * A waiting row whose folder has question text off. It says what is missing and how to turn
  * it on: a button where the page can save the choice, and always the option to add to the
  * command, for a page that has no button (inside JQ Deck, --no-manage, a saved file).
- * The option is one click to select: the page runs no script, so it cannot copy for you.
+ * The option has a Copy button (presence.ts COPY_SCRIPT, the one script the page runs).
  */
 function questionOff(tree: string, manage?: Manage): string {
-  const option = `<code class="copy">${esc(questionsOption(tree))}</code>`
+  const option = copyable(questionsOption(tree))
   return (
     '<div class="q off"><p class="mut">Question text is off for this folder: the page shows that a session is waiting, and not what it asked.</p>' +
     (manage
@@ -203,18 +203,18 @@ ul{list-style:none;margin:0;padding:0}li{border-top:1px solid var(--line);paddin
 .chip{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px}
 .why{margin:6px 0 2px;font-size:13px}.why summary{cursor:pointer;color:var(--mut);font-size:12px}.why p{margin:6px 0}
 code{font:12px ui-monospace,Menlo,monospace;background:var(--well);border-radius:4px;padding:1px 4px;word-break:break-all}
-code.copy{user-select:all;-webkit-user-select:all;cursor:copy}.q.off p{margin:4px 0}
+.q.off p{margin:4px 0}
 .cmds{border:1px solid var(--line);border-radius:8px}.cmds li,.fix li{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between}
 .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}form{margin:0}
 button{font:600 12px system-ui,sans-serif;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 10px;min-height:30px;cursor:pointer}
 button:hover{border-color:var(--mut)}button:focus-visible{outline:2px solid var(--fg);outline-offset:2px}.pad{margin:0;padding:8px 12px}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--well);margin:8px 0 2px;padding:10px;border-radius:8px;font-size:12px}.q{margin:6px 0 0}
-${bar ? TOOLBAR_CSS : ''}</style></head><body><main>
+${COPY_CSS}${bar ? TOOLBAR_CSS : ''}</style></head><body><main>
 <h1>JQ Agents</h1>
 <p class="mut">${esc(snap.machine)} · read ${esc(snap.generated_at)}. Refresh to read again. Read-only: answer a session where it is running.</p>
 <div class="tot"><div><b>${t.needs_you}</b><span class="mut">waiting on a person</span></div><div><b>${t.abandoned}</b><span class="mut">asked, then left</span></div><div><b>${t.live}</b><span class="mut">live</span></div><div><b>${t.sessions}</b><span class="mut">sessions in ${t.trees} ${t.trees === 1 ? 'tree' : 'trees'}</span></div></div>
 ${chip}
 ${trees || '<p class="mut">No session has been active in the window read.</p>'}
 ${manage ? questionsPanel(manage) : ''}${manage ? correctionsPanel(snap, manage) : ''}
-</main>${bar}</body></html>`
+</main>${bar}${COPY_SCRIPT_TAG}</body></html>`
 }

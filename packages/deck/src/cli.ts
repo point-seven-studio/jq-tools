@@ -175,7 +175,7 @@ export async function handle(url: string, host: string | undefined, ctx: Context
   if (u.pathname === '/') {
     const asked = u.searchParams.get('tab')
     const tab: Tab = (TABS as readonly string[]).includes(asked ?? '') ? (asked as Tab) : 'overview'
-    const bar = toolbar({ here: 'deck', running: readRunning(ctx.runningDir), team: readTeamUrl(ctx.configFile), update: ctx.update?.() ?? null })
+    const bar = toolbar({ here: 'deck', running: readRunning(ctx.runningDir), team: readTeamUrl(ctx.configFile), update: ctx.update?.() ?? null, copy: true })
     // ?find=NAME is how a team board points at one repository: it knows names, never paths.
     const find = u.searchParams.get('find')
     return html(renderShell(await overview(ctx.deck), tab, u.searchParams.get('repo'), ctx.version, bar, find === null ? null : find.slice(0, 100)))
