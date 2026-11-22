@@ -20,6 +20,11 @@
 #
 #   crosstalk view [--html FILE | --json]         a local page: waiting, threads, board
 #
+# Signed mail (a sender whose mail must prove who wrote it, such as a person):
+#   crosstalk keygen <name>                       add a signer; prints the private key once
+#   crosstalk verify <path>                       check a message's signature
+#   `read` runs the same check and prints the result before the message.
+#
 # The body comes from -f, or from stdin.
 #
 # Who you are:   --from <name>, or $CROSSTALK_SELF (set it once per session).
@@ -38,7 +43,7 @@ PKG="$(cd "$(dirname "$SELF_PATH")/.." && pwd)"
 BOARD="board"
 
 usage() {
-  sed -n '2,25p' "$SELF_PATH" | sed 's/^# \{0,1\}//'
+  sed -n '2,30p' "$SELF_PATH" | sed 's/^# \{0,1\}//'
 }
 
 # ── init ──────────────────────────────────────────────────────────────
@@ -175,6 +180,32 @@ board_list() {
   if [ "$other" -gt 0 ]; then echo "($other other open, outside your tags: crosstalk board --all)"; fi
 }
 
+# ── signed mail ───────────────────────────────────────────────────────
+# registry/signers.txt lists senders whose mail must be signed (`name: public key`).
+# The check itself is in dist/sign.mjs, because a shell cannot verify a signature.
+SIGNERS="$ROOT/registry/signers.txt"
+
+# Is this name a signer? Reads only `name: key` lines.
+is_signer() {
+  [ -f "$SIGNERS" ] || return 1
+  grep -qE "^$1: *[A-Za-z0-9+/=]+ *$" "$SIGNERS"
+}
+
+# Print what the signature check found for a message; nothing for ordinary mail.
+# Returns 0 when nothing is wrong, 3 when the message should not be trusted.
+sigcheck() {
+  local f="$1" from
+  from=$(fm "$f" from)
+  # Ordinary mail: the sender has no key and the message carries no signature.
+  if ! is_signer "$from" && [ -z "$(fm "$f" signature)" ]; then return 0; fi
+  if ! command -v node >/dev/null 2>&1 || [ ! -f "$PKG/dist/sign.mjs" ]; then
+    # Never read "could not check" as "fine".
+    echo "signature: NOT CHECKED. This says it is from $from, whose mail must be signed, and node was not found to check it. Treat it as unverified."
+    return 3
+  fi
+  node "$PKG/dist/sign.mjs" check "$ROOT" "$f"
+}
+
 # ── commands that are `send` in disguise ──────────────────────────────
 if [ "${1:-}" = "post" ]; then
   shift
@@ -241,6 +272,9 @@ case "${1:-}" in
     [ -d "$ROOT/inbox/$FROM" ] || { echo "unknown sender: $FROM (no inbox/$FROM/)" >&2; exit 1; }
     [ "$FROM" != "$BOARD" ] || { echo "'$BOARD' cannot send" >&2; exit 1; }
     [ "$FROM" != "$TO" ] || { echo "sender ($FROM) cannot equal recipient ($TO)" >&2; exit 1; }
+    # A signer's mail is written by whoever holds its private key, never by this tool:
+    # a message sent here would carry the name without the signature.
+    if is_signer "$FROM"; then echo "$FROM signs its mail (registry/signers.txt); it cannot be sent with this tool" >&2; exit 1; fi
 
     case "$KIND" in
       brief|question|notice) ;;
@@ -351,7 +385,25 @@ case "${1:-}" in
     fi
     ;;
   read)
-    cat "${2:?path required}"
+    F="${2:?path required}"
+    [ -f "$F" ] || { echo "no such message: $F" >&2; exit 1; }
+    # The check comes first, so a reader sees it before the words it is about. On
+    # stderr, so a script reading the message from stdout gets the file and nothing else.
+    sigcheck "$F" >&2 || true
+    cat "$F"
+    ;;
+  verify)
+    F="${2:?path required}"
+    [ -f "$F" ] || { echo "no such message: $F" >&2; exit 1; }
+    OUT=$(sigcheck "$F") && RC=0 || RC=$?
+    if [ -z "$OUT" ]; then echo "signature: none, and none is needed. $(fm "$F" from) is not a signer in this mailbox."; else echo "$OUT"; fi
+    exit "$RC"
+    ;;
+  keygen)
+    NAME="${2:?keygen needs a name}"
+    command -v node >/dev/null 2>&1 || { echo "keygen needs node" >&2; exit 1; }
+    [ -f "$PKG/dist/sign.mjs" ] || { echo "the signing bundle is not built (run: npm run build)" >&2; exit 1; }
+    exec node "$PKG/dist/sign.mjs" keygen "$ROOT" "$NAME"
     ;;
   ack)
     F="${2:?path required}"
