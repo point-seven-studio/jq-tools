@@ -22,7 +22,7 @@ import { snapshot, type Snapshot } from './collect.js'
 import { defaultConfigFile, readQuestionTrees, readTurnCheckConfig, writeQuestionTrees, writeTurnCheckConfig } from './config.js'
 import { applyQuestionsAction, parseQuestionsAction } from './questions.js'
 import { renderPage } from './page.js'
-import { COPY_SCRIPT_CSP, announce, readRunning, readTeamUrl, toolbar } from './presence.js'
+import { COPY_SCRIPT_CSP, LAMP_PATH, announce, lampReply, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { startUpdateCheck } from './update-check.js'
 import { applyAction, parseAction } from './turn-check.js'
 
@@ -221,6 +221,13 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
         if (action) writeQuestionTrees(applyQuestionsAction(saved, action), a.configFile)
         res.writeHead(303, { location: '/', 'cache-control': 'no-store' })
         res.end()
+        return
+      }
+      // The light a team board shows for this tool (presence.ts). Answered only where a team board is set up.
+      if (req.method === 'GET' && req.url === LAMP_PATH) {
+        const lamp = lampReply(a.configFile)
+        res.writeHead(lamp.status, lamp.headers)
+        res.end(lamp.body)
         return
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') {

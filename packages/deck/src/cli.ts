@@ -11,7 +11,7 @@
  */
 import { spawn } from 'child_process'
 import { createServer } from 'http'
-import { announce, readRunning, readTeamUrl, runningDir, toolbar } from './presence.js'
+import { LAMP_PATH, announce, lampReply, readRunning, readTeamUrl, runningDir, toolbar } from './presence.js'
 import { startUpdateCheck, type UpdateNotice } from './update-check.js'
 import path from 'path'
 import { readTurnCheckConfig, renderPage as renderSessions, snapshot } from '@point-seven-studio/jq-agents'
@@ -154,7 +154,7 @@ export function buildContext(a: Args, env: Record<string, string | undefined>, c
 
 export interface Reply {
   status: number
-  type: 'text/html; charset=utf-8' | 'text/plain; charset=utf-8'
+  type: 'text/html; charset=utf-8' | 'text/plain; charset=utf-8' | 'image/svg+xml'
   body: string
 }
 const html = (body: string): Reply => ({ status: 200, type: 'text/html; charset=utf-8', body })
@@ -172,6 +172,11 @@ export function hostAllowed(host: string | undefined, port: number): boolean {
 export async function handle(url: string, host: string | undefined, ctx: Context, overview: (o: DeckOptions) => Promise<Overview> = collectOverview): Promise<Reply> {
   if (!hostAllowed(host, ctx.port)) return plain(403, 'jq-deck answers only on this machine')
   const u = new URL(url, 'http://127.0.0.1')
+  // The light a team board shows for this tool (presence.ts). Answered only where a team board is set up.
+  if (u.pathname === LAMP_PATH) {
+    const lamp = lampReply(ctx.configFile)
+    return lamp.status === 200 ? { status: 200, type: 'image/svg+xml', body: lamp.body } : plain(404, 'not found')
+  }
   if (u.pathname === '/') {
     const asked = u.searchParams.get('tab')
     const tab: Tab = (TABS as readonly string[]).includes(asked ?? '') ? (asked as Tab) : 'overview'
@@ -249,6 +254,8 @@ export async function run(argv: string[], version: string): Promise<void> {
     res.writeHead(reply.status, {
       'content-type': reply.type,
       'cache-control': 'no-store',
+      // The light is an image a team board on another site may show. Nothing else here is.
+      ...(reply.type === 'image/svg+xml' ? { 'cross-origin-resource-policy': 'cross-origin' } : {}),
       'x-frame-options': 'SAMEORIGIN',
       'content-security-policy': "frame-ancestors 'self'",
     })

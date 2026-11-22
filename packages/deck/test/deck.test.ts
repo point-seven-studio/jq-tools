@@ -291,6 +291,14 @@ describe('the request handler', () => {
     expect(hostAllowed('127.0.0.1:9999', 4316)).toBe(false)
     expect(hostAllowed(undefined, 4316)).toBe(false)
     expect((await handle('/', 'evil.example:4316', ctx())).status).toBe(403)
+    // The light a team board shows: an image, only where a team board is set up, and only to this machine's own names.
+    expect((await handle('/jq-up.svg', '127.0.0.1:4316', ctx())).status).toBe(404)
+    const withTeam = path.join(dir, 'team-config.json')
+    writeFileSync(withTeam, JSON.stringify({ team: 'https://deck.example.com' }))
+    const lamp = await handle('/jq-up.svg', '127.0.0.1:4316', { ...ctx(), configFile: withTeam })
+    expect(lamp).toMatchObject({ status: 200, type: 'image/svg+xml' })
+    expect(lamp.body.startsWith('<svg')).toBe(true)
+    expect((await handle('/jq-up.svg', 'evil.example:4316', { ...ctx(), configFile: withTeam })).status).toBe(403)
   })
 
   it('reads a session, checks its repository and serves each tab', async () => {

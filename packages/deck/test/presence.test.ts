@@ -5,6 +5,7 @@ import path from 'path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { TOOLS, TOOLBAR_CSS, announce, readRunning, readTeamUrl, toolbar } from '../src/presence.js'
 import { COPY_SCRIPT, COPY_SCRIPT_CSP, COPY_SCRIPT_SHA256, COPY_SCRIPT_TAG, copyable } from '../src/presence.js'
+import { LAMP_IMG_SOURCES, LAMP_PATH, LAMP_SVG, lampReply } from '../src/presence.js'
 import { createHash } from 'crypto'
 
 let dir: string
@@ -183,5 +184,38 @@ describe('copy buttons', () => {
     expect(plain).not.toContain('<button')
     // The team board is served from elsewhere and runs no script: its bar never has one.
     expect(toolbar({ here: 'team', running: null })).not.toMatch(/data-jqcopy|<button|<script/)
+  })
+})
+
+describe('lights', () => {
+  const dir = () => mkdtempSync(path.join(os.tmpdir(), 'jq-lamp-'))
+  it('answers the image only on a machine that has a team board', () => {
+    const file = path.join(dir(), 'config.json')
+    expect(lampReply(file)).toMatchObject({ status: 404, body: 'not found' })
+    writeFileSync(file, JSON.stringify({ questions: ['/code/shop'] }))
+    expect(lampReply(file).status).toBe(404)
+    writeFileSync(file, JSON.stringify({ team: 'https://deck.example.com' }))
+    const up = lampReply(file)
+    expect(up.status).toBe(200)
+    expect(up.headers).toEqual({ 'content-type': 'image/svg+xml', 'cache-control': 'no-store', 'cross-origin-resource-policy': 'cross-origin', 'x-content-type-options': 'nosniff' })
+    expect(up.body).toBe(LAMP_SVG)
+  })
+  it('is an image that says nothing about the machine', () => {
+    expect(LAMP_PATH).toBe('/jq-up.svg')
+    expect(LAMP_SVG.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true)
+    expect(LAMP_SVG).not.toMatch(/<script|<text|<title|href|on[a-z]+=/)
+    expect(LAMP_IMG_SOURCES).toBe('http://127.0.0.1:4316 http://127.0.0.1:4319 http://127.0.0.1:4317 http://127.0.0.1:4318')
+  })
+  it('puts a light beside each tool only on a page served from elsewhere that asks for them', () => {
+    const bar = toolbar({ here: 'team', running: null, lamps: true })
+    expect(bar.match(/class="lamp"/g)).toHaveLength(4)
+    expect(bar).toContain('<span class="lamp" aria-hidden="true"><img src="http://127.0.0.1:4316/jq-up.svg" alt="" width="10" height="10"></span>JQ Deck')
+    expect(bar).toContain('A red ring means no answer')
+    // It never says a tool is not running: the browser may simply have refused to look.
+    expect(bar).not.toMatch(/<script|<small>not running<\/small>/)
+    // A local page knows what is running: it shows no light, with or without the option.
+    const none = { deck: null, agents: null, groundcrew: null, crosstalk: null }
+    expect(toolbar({ here: 'deck', running: none, lamps: true })).not.toContain('class="lamp"')
+    expect(toolbar({ here: 'team', running: null })).not.toContain('class="lamp"')
   })
 })

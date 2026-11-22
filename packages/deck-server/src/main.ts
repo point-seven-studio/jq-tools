@@ -16,6 +16,8 @@ On the server:
   jq-deck-server serve                         http://127.0.0.1:${DEFAULT_PORT}
         --port NUMBER  --host ADDRESS          --host 0.0.0.0 to accept other machines
         --plain-http                           allow sign-in without HTTPS (not advised)
+        --no-lights                            do not ask a viewer's browser whether their local
+                                               JQ tools answer (the lights in the bar)
 
 On each machine that reports:
   JQ_DECK_TOKEN=... jq-deck --watch --exec "jq-deck-server send --url ADDRESS"

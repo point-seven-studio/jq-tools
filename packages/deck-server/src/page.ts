@@ -1,6 +1,6 @@
 /**
- * The team page and the sign-in page. One HTML string each, no script, no
- * outside request. Every value is escaped: names come from other machines.
+ * The team page and the sign-in page. One HTML string each, no script. The one
+ * outside request is the lights in the bar, when they are on (presence.ts). Every value is escaped: names come from other machines.
  *
  * The page shows only what buildTeam() returns. The few sums made here (live
  * sessions, setup items to fix and to look at) add up numbers the machines
@@ -234,7 +234,8 @@ function row(r: ReportRow, now: number, view: View): string {
 const FILTER_NAMES: Record<Filter, string> = { all: 'All reports', waiting: 'Waiting', live: 'Live', fix: 'Setup to fix' }
 const SORT_NAMES: Record<Sort, string> = { waiting: 'Longest wait', repository: 'Repository name', machine: 'Machine name', setup: 'Lowest setup score' }
 
-export function renderTeam(team: Team, viewerName: string, version: string, view: View = DEFAULT_VIEW): string {
+/** `lights`: put a light beside each local tool in the bar, asked for by the viewer's own browser (presence.ts). */
+export function renderTeam(team: Team, viewerName: string, version: string, view: View = DEFAULT_VIEW, lights = false): string {
   const now = Date.parse(team.generated_at)
   const t = team.totals
   const known = t.machines_fresh + t.machines_quiet + t.machines_silent
@@ -343,7 +344,7 @@ ${pills}${table}</section>
 </div>
 <p class="privacy"><b>Read-only.</b> Answer a session where it is running. ${policy}</p>
 <p class="foot mono">JQ Deck Server ${esc(version)}</p>
-</main></div></div>${toolbar({ here: 'team', running: null })}</body></html>`
+</main></div></div>${toolbar({ here: 'team', running: null, lamps: lights })}</body></html>`
 }
 
 export function renderLogin(message: string | null): string {
