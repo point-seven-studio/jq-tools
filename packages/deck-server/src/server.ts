@@ -6,7 +6,7 @@
  *   GET  /            the team page             viewer cookie
  *                     ?group= &filter= &sort= &q= choose and order its rows; they change no number
  *   GET  /api/team    the same, as JSON         viewer cookie or Bearer viewer token
- *   GET  /login, POST /login, POST /logout
+ *   GET  /login, POST /login, POST /logout     GET /login sends a signed-in viewer to /
  *   GET  /healthz     "ok", for a load balancer
  */
 import { createServer, type Server } from 'http'
@@ -80,7 +80,12 @@ export function handle(req: Req, ctx: ServerContext): Res {
     return { status: 204, headers: {}, body: '' }
   }
 
-  if (route === 'GET /login') return { status: 200, headers: HTML, body: renderLogin(null) }
+  if (route === 'GET /login') {
+    // Already signed in: the board is where they meant to go. A cookie that no longer
+    // matches a viewer (removed, or never valid) gets the sign-in page as before.
+    if (viewerFor(config, cookieToken(req.cookie))) return { status: 303, headers: { location: '/' }, body: '' }
+    return { status: 200, headers: HTML, body: renderLogin(null) }
+  }
   if (route === 'POST /login') {
     const token = new URLSearchParams(req.body).get('token')?.trim()
     if (!viewerFor(config, token)) {
