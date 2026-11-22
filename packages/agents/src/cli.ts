@@ -257,7 +257,7 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
         const asked = Number(url.searchParams.get('days'))
         const result = await signals.read(WINDOWS.includes(asked) ? asked : 7)
         res.writeHead(200, headers)
-        res.end(renderSignals(result, Date.now(), toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() })))
+        res.end(renderSignals(result, Date.now(), toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() }), url.searchParams.get('open') === 'all'))
         return
       }
       if (url.pathname !== '/') {

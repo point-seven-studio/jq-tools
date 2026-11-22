@@ -55,7 +55,7 @@ Sessions are grouped by working tree (the git repository a session is in), becau
 
 ## Signals
 
-`http://127.0.0.1:4319/signals` counts what Claude Code already wrote into its transcripts, over today, 7 days or 30 days. It follows the usual eight areas of AI observability, and under each one it names what a transcript cannot answer, so a missing number never reads as a zero.
+`http://127.0.0.1:4319/signals` counts what Claude Code already wrote into its transcripts, over today, 7 days or 30 days. Each area is a box that starts closed, showing one figure and a small picture of it; click it for the detail, or use "Open all". It follows the usual eight areas of AI observability, and under each one it names what a transcript cannot answer, so a missing number never reads as a zero.
 
 | Area | Counted from a transcript | Not in a transcript |
 | --- | --- | --- |
