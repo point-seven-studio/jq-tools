@@ -4,7 +4,7 @@ One page for a team: which Claude Code sessions are waiting on a person, on whos
 
 Each machine runs [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck) and reports counts and scores for the repositories it chooses. This server keeps the latest report from each machine and shows them together. You host it yourself, so your team's data stays on your own systems.
 
-![The JQ Deck team page: sessions waiting on a person across three machines, one card per repository with a row per machine.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck-server/docs/screenshot.png)
+![The JQ Deck team page: totals, an amber strip naming the longest wait, and one card per repository with a row per machine.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck-server/docs/screenshot.png)
 
 *The data in the picture is made up.*
 
@@ -65,9 +65,13 @@ The data folder is `/data`. Mount a volume there, or a restart forgets every tok
 ## The page
 
 - **The line at the top** says how many sessions are waiting on a person and which has waited longest.
+- **Four totals:** sessions waiting on a person, sessions (and how many are live), machines reporting out of machines known, and setup items to fix. They add up what the machines reporting now sent. The server works out no score of its own.
+- **An amber strip,** only while something waits: the repository that has waited longest, whose machine it is on, and for how long. Answer it in the session on that machine.
 - **One card per repository,** with a row per machine: sessions, waiting, setup score, unread mail, and when the machine was last heard from. Where a machine opted in, what its waiting sessions asked is under its row. The same repository on two machines is one card when both have the same git remote.
+- **Machines and Setup,** side by side below: when each machine was last heard from, and each setup check that was reported.
 - **A machine not heard from for 5 minutes is not counted.** Its rows stay, greyed, marked "not current". After a day its rows are hidden and it is listed as silent. Old numbers never look current.
-- The page reloads every minute. It is read-only: there is no way to answer a session from it.
+- **Unknown is never shown as zero.** No inbox, no setup check and no reported wait each show a dash with the reason beside it.
+- The page reloads every minute. It is read-only: there is no way to answer a session from it. The links at the side jump to parts of the same page. It follows the reader's light or dark setting.
 
 `GET /api/team` returns the same as JSON, with `Authorization: Bearer <viewer token>`.
 
