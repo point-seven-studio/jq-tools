@@ -147,6 +147,12 @@ The body, in markdown.
 - No access control. Anyone who can write to the folder can send as any name, except a name with a key in `registry/signers.txt` (see Signed mail, and its limit).
 - Threads are exact for mail sent with this tool. For hand-written mail they are worked out from citations and subjects, which is a guess.
 
+## Links to the other tools
+
+The page served by `crosstalk view` has a bar at the bottom with a link to each of the other JQ tools. A tool that is running on this machine is a link to the port it is really on. One that is not says "not running" and gives the command that starts it. The team board is a link when `~/.jq/config.json` holds a `"team"` line with its address, and says "not set up" otherwise.
+
+How a page knows what is running, without a network call: while a tool serves its page it keeps a small note in `~/.jq/running/` (the tool, its port, its process id), and removes it when it stops. The other pages read those notes and ignore one whose process is gone. The bar is as of the last page load. A page written with `--html`, or shown inside JQ Deck, has no bar.
+
 ## Related tools
 
 - [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck): all of these on one local page, from one command.

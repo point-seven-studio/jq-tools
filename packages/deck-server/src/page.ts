@@ -2,6 +2,7 @@
  * The team page and the sign-in page. One HTML string each, no script, no
  * outside request. Every value is escaped: names come from other machines.
  */
+import { TOOLBAR_CSS, toolbar } from './presence.js'
 import { duration, type Team, type TeamRow } from './team.js'
 
 const esc = (s: unknown) =>
@@ -77,7 +78,7 @@ export function renderTeam(team: Team, viewerName: string, version: string): str
     .join('')
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60">
-<title>${t.needs_you > 0 ? `(${t.needs_you}) ` : ''}JQ Deck: team</title><link rel="icon" href="data:,"><style>${STYLE}</style></head><body><main>
+<title>${t.needs_you > 0 ? `(${t.needs_you}) ` : ''}JQ Deck: team</title><link rel="icon" href="data:,"><style>${STYLE}${TOOLBAR_CSS}</style></head><body><main>
 <div class="top"><div><h1>JQ Deck: team</h1><p class="head">${esc(team.headline)}</p></div><form method="post" action="/logout"><button>Sign out</button></form></div>
 ${known > 0 ? tiles : ''}
 <p class="mut">Read at ${esc(clock(team.generated_at))}, signed in as ${esc(viewerName)}${team.scoped ? ', who sees some repositories only' : ''}. Reloads every minute. Read-only: answer a session where it is running.</p>
@@ -85,7 +86,7 @@ ${groups || '<p class="card pad mut">No repository to show.</p>'}
 <h2>Machines</h2>
 <div class="card"><ul>${machines || '<li class="mut">None yet. On each machine: <code>jq-deck --watch --exec "jq-deck-server send --url THIS-ADDRESS"</code></li>'}</ul></div>
 <p class="mut">A machine sends counts and scores: no folder path and no message. What a session asked is sent only where that machine opted the folder in. JQ Deck Server ${esc(version)}.</p>
-</main></body></html>`
+</main>${toolbar({ here: 'team', running: null })}</body></html>`
 }
 
 export function renderLogin(message: string | null): string {

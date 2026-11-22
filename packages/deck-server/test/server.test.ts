@@ -228,7 +228,10 @@ describe('the HTTP handler', () => {
     const page = handle({ method: 'GET', path: '/', cookie: `jq_deck=${viewer}`, body: '' }, ctx).body
     expect(page).not.toContain('<img')
     expect(page).toContain('&lt;img')
-    expect(page).not.toMatch(/<script|https?:\/\//)
+    // The only addresses on the page are the reader's own machine: the links to the local tools.
+    expect(page.replace(/http:\/\/127\.0\.0\.1:\d+/g, '')).not.toMatch(/<script|https?:\/\//)
+    expect(page).toContain('aria-label="JQ tools"')
+    expect(page).toContain('this page cannot see whether it is running')
     expect(renderTeam(buildTeam([], NOW), 'lee', 't')).toContain('None yet')
   })
 

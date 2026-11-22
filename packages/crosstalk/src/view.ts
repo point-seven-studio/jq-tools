@@ -12,6 +12,7 @@ import { writeFileSync } from 'fs'
 import { createServer } from 'http'
 import { BOARD, boardPosts, deriveThreads, waitingBoard } from './board.js'
 import { renderPage, type Report } from './page.js'
+import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { readMailbox } from './read.js'
 
 export const DEFAULT_PORT = 4318
@@ -67,10 +68,14 @@ export function run(args: string[]): void {
   createServer((_req, res) => {
     try {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
-      res.end(renderPage(buildReport(parsed.root)))
+      res.end(renderPage(buildReport(parsed.root), toolbar({ here: 'crosstalk', running: readRunning(), team: readTeamUrl() })))
     } catch (e: any) {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       res.end(String(e?.message || e))
     }
-  }).listen(parsed.port, '127.0.0.1', () => console.log(`crosstalk: http://127.0.0.1:${parsed.port} (Ctrl-C to stop)`))
+  }).listen(parsed.port, '127.0.0.1', () => {
+    // Tell the other JQ pages on this machine where this one is, until it stops.
+    announce('crosstalk', parsed.port)
+    console.log(`crosstalk: http://127.0.0.1:${parsed.port} (Ctrl-C to stop)`)
+  })
 }

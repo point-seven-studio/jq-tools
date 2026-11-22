@@ -3,6 +3,7 @@
  * One HTML string, no script, no outside request. Question text comes from a
  * session's own output, so every value is escaped.
  */
+import { TOOLBAR_CSS } from './presence.js'
 import { deriveAttention, type AgentStatusRow } from './agent-status.js'
 import type { Snapshot } from './collect.js'
 import { ruleText, type TurnCheckConfig, type TurnEvidence } from './turn-check.js'
@@ -138,11 +139,12 @@ function correctionsPanel(snap: Snapshot, m: Manage): string {
     (items.length
       ? `<ul>${items.join('')}</ul>`
       : '<p class="mut pad">None yet. A label you think is wrong has a "Why, and is it wrong?" link under it.</p>') +
-    '<p class="mut pad">Saved in <code>~/.jq/config.json</code> on this machine. This is the only file JQ Agents writes.</p></section>'
+    '<p class="mut pad">Saved in <code>~/.jq/config.json</code> on this machine. Apart from its own running note in <code>~/.jq/running/</code>, this is the only file JQ Agents writes.</p></section>'
   )
 }
 
-export function renderPage(snap: Snapshot, now = Date.now(), manage?: Manage): string {
+/** `bar` is the links to the other tools (presence.ts `toolbar`), or '' for a page with none, such as one shown inside JQ Deck. */
+export function renderPage(snap: Snapshot, now = Date.now(), manage?: Manage, bar = ''): string {
   const t = totals(snap.sessions)
   // 'none' renders nothing: a chip that is always present is a chip nobody reads.
   // 'unknown' does render, because no data must never look like no problem.
@@ -174,12 +176,12 @@ code{font:12px ui-monospace,Menlo,monospace;background:var(--well);border-radius
 button{font:600 12px system-ui,sans-serif;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 10px;min-height:30px;cursor:pointer}
 button:hover{border-color:var(--mut)}button:focus-visible{outline:2px solid var(--fg);outline-offset:2px}.pad{margin:0;padding:8px 12px}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--well);margin:8px 0 2px;padding:10px;border-radius:8px;font-size:12px}.q{margin:6px 0 0}
-</style></head><body><main>
+${bar ? TOOLBAR_CSS : ''}</style></head><body><main>
 <h1>JQ Agents</h1>
 <p class="mut">${esc(snap.machine)} · read ${esc(snap.generated_at)}. Refresh to read again. Read-only: answer a session where it is running.</p>
 <div class="tot"><div><b>${t.needs_you}</b><span class="mut">waiting on a person</span></div><div><b>${t.abandoned}</b><span class="mut">asked, then left</span></div><div><b>${t.live}</b><span class="mut">live</span></div><div><b>${t.sessions}</b><span class="mut">sessions in ${t.trees} ${t.trees === 1 ? 'tree' : 'trees'}</span></div></div>
 ${chip}
 ${trees || '<p class="mut">No session has been active in the window read.</p>'}
 ${manage ? correctionsPanel(snap, manage) : ''}
-</main></body></html>`
+</main>${bar}</body></html>`
 }

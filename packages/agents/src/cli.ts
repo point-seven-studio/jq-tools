@@ -21,6 +21,7 @@ import { createServer, type IncomingMessage } from 'http'
 import { snapshot, type Snapshot } from './collect.js'
 import { defaultConfigFile, readTurnCheckConfig, writeTurnCheckConfig } from './config.js'
 import { renderPage } from './page.js'
+import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { applyAction, parseAction } from './turn-check.js'
 
 export const DEFAULT_PORT = 4319
@@ -196,12 +197,17 @@ export async function run(argv: string[]): Promise<void> {
       }
       const snap = await collect(a, a.manage)
       shown = { trees: [...new Set(snap.sessions.map((r) => r.working_tree))], sessions: Object.fromEntries(snap.sessions.map((r) => [r.session_id, r.last_activity_at])) }
-      const page = renderPage(snap, Date.now(), a.manage ? { token, config: readTurnCheckConfig(a.configFile) } : undefined)
+      const bar = toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile) })
+      const page = renderPage(snap, Date.now(), a.manage ? { token, config: readTurnCheckConfig(a.configFile) } : undefined, bar)
       res.writeHead(200, headers)
       res.end(page)
     } catch (e: any) {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       res.end(String(e?.message || e))
     }
-  }).listen(a.port, '127.0.0.1', () => console.log(`jq-agents: http://127.0.0.1:${a.port} (Ctrl-C to stop)`))
+  }).listen(a.port, '127.0.0.1', () => {
+    // Tell the other JQ pages on this machine where this one is, until it stops.
+    announce('agents', a.port)
+    console.log(`jq-agents: http://127.0.0.1:${a.port} (Ctrl-C to stop)`)
+  })
 }
