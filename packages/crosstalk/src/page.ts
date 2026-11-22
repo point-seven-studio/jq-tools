@@ -32,7 +32,15 @@ const SETTLED: Record<string, string> = {
 function row(m: MessageSummary, bodies: Record<string, string>, note: string, showTo = false): string {
   const kind = m.kind && m.kind !== 'brief' ? `<span class="kind">${esc(m.kind)}</span> ` : ''
   const to = showTo ? ` <span class="mut">to</span> <span class="chip">${esc(m.to_session)}</span>` : ''
-  return `<details><summary><span class="chip">${esc(m.from_session)}</span>${to} ${kind}<span class="subj">${esc(m.subject || '(no subject)')}</span> <span class="note">${esc(note)}</span></summary><p class="file">${esc(m.filename)}</p><pre>${esc(bodies[m.id] ?? '')}</pre></details>`
+  // Signed mail: say what the check found, in words. Ordinary mail says nothing.
+  const who = m.author ? ` <span class="mut">${esc(m.author)}</span>` : ''
+  const signed =
+    m.signature_state === 'verified'
+      ? ' <span class="kind">signed</span>'
+      : m.signature_state
+        ? ` <span class="kind">${m.signature_state === 'unknown-signer' ? 'signature not checked' : 'NOT VERIFIED'}</span>`
+        : ''
+  return `<details><summary><span class="chip">${esc(m.from_session)}</span>${who}${signed}${to} ${kind}<span class="subj">${esc(m.subject || '(no subject)')}</span> <span class="note">${esc(note)}</span></summary><p class="file">${esc(m.filename)}</p><pre>${esc(bodies[m.id] ?? '')}</pre></details>`
 }
 
 function post(p: BoardPost, bodies: Record<string, string>): string {

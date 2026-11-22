@@ -40,6 +40,8 @@ export function parseMessage(
   expires_on: string | null
   evidence: string | null
   settled_by: string | null
+  /** Who wrote it, when the sender is a role such as `human`. */
+  author: string | null
 } {
   let tags: string[] | null = null
   let expires: string | null = null
@@ -48,6 +50,7 @@ export function parseMessage(
   let kind: string | null = null
   let thread: string | null = null
   let replyTo: string | null = null
+  let author: string | null = null
   let from = ''
   let subject: string | null = null
   let sent: string | null = null
@@ -71,6 +74,7 @@ export function parseMessage(
       } else if (m[1] === 'expires') expires = /^\d{4}-\d{2}-\d{2}$/.test(m[2].trim()) ? m[2].trim() : null
       else if (m[1] === 'evidence') evidence = m[2].trim() || null
       else if (m[1] === 'settled_by') settledBy = m[2].trim() || null
+      else if (m[1] === 'author') author = m[2].trim() || null
     }
   }
   // A file with no sender is still shown, never guessed at.
@@ -91,5 +95,6 @@ export function parseMessage(
     expires_on: expires,
     evidence: evidence && ['verified', 'assumed'].includes(evidence) ? evidence : null,
     settled_by: settledBy && SETTLED_BY.includes(settledBy) ? settledBy : null,
+    author,
   }
 }

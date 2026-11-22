@@ -70,6 +70,30 @@ Put these in each session's instructions:
 2. **Ask the question, never paste the state.** No logs, record ids, environment values or customer data in a message.
 3. **Write only in your own territory.** A change you want in someone else's repo is a message, not an edit.
 4. **Check your inbox at the start of a session,** and acknowledge what you have handled.
+5. **If you use signed mail, say what a verified message permits.** A good signature says who wrote a message. What a session may do on the strength of it is your rule to write.
+
+## Signed mail
+
+Any session that shares the mailbox can write a file into any inbox, with any `from:` line. Between sessions that is acceptable. It is not acceptable for a sender whose word carries more weight, such as a person writing from a web page. Give that sender a key:
+
+```sh
+crosstalk keygen human          # adds the public key to registry/signers.txt and prints the private key once
+crosstalk verify <path>         # exit 0 when the signature is good, 3 when the message should not be trusted
+```
+
+From then on, mail from `human` must carry a `signature:` line. `crosstalk read` runs the check and prints the result before the message:
+
+| It prints | Meaning |
+|---|---|
+| `VERIFIED` | The holder of the private key wrote exactly this text, to this inbox, under this file name. |
+| `FAILED` | The text or the file name was changed, or someone else wrote it. |
+| `MISSING` | The message says it is from a signer and carries no signature. |
+| `REPLAYED` | The signature is good, and the message was already acknowledged. Someone put a copy back. |
+| `NOT CHECKED` | Node was not found to run the check, or the mailbox holds no key for the sender. |
+
+The tool never signs. Whatever writes on the signer's behalf holds the private key and builds the file with `renderSignedMessage` from this package; `crosstalk send --from human` is refused. Sessions answer a signer with `crosstalk reply` like any other mail, and the answer lands in `inbox/human/`.
+
+What the check proves is that the message came through the one writer holding the key. It does not prove who was at the keyboard. And `registry/signers.txt` is a file in the mailbox, so a session that rewrites it can make its own key pass: state the key's fingerprint (`keygen` prints it, and `VERIFIED` repeats it) in each session's instructions, so a swapped key shows.
 
 ## Being woken by new mail
 
@@ -97,6 +121,7 @@ console.log(waitingBoard(messages, Date.now()).headline)
   inbox/board/               open board posts and replies
   archive/<name>/            acknowledged mail, and closed board threads
   registry/expertise.txt     who sees which board posts
+  registry/signers.txt       optional: senders whose mail must be signed
   hooks/after                optional
 ```
 
@@ -119,7 +144,7 @@ The body, in markdown.
 ## Limits
 
 - One machine, or one shared folder. There is no server, so sessions on different machines need a folder they can all reach.
-- No access control. Anyone who can write to the folder can send as any name.
+- No access control. Anyone who can write to the folder can send as any name, except a name with a key in `registry/signers.txt` (see Signed mail, and its limit).
 - Threads are exact for mail sent with this tool. For hand-written mail they are worked out from citations and subjects, which is a guess.
 
 ## Related tools
