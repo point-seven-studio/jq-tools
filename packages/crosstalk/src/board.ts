@@ -50,6 +50,10 @@ export interface MessageSummary {
   age_days: number | null
   /** null on mail sent before kinds existed. */
   kind: string | null
+  /** Who wrote it, when the sender is a role such as `human`; null otherwise. */
+  author: string | null
+  /** Signed mail: what the reader's check found; null for ordinary mail or when no check ran. */
+  signature_state: string | null
 }
 
 export interface InboxWaiting {
@@ -87,6 +91,8 @@ export function summarize(m: Message, now: number): MessageSummary {
     acked: m.acked,
     age_days: ageDays(m.sent_at, now),
     kind: m.kind ?? null,
+    author: m.author ?? null,
+    signature_state: m.signature_state ?? null,
   }
 }
 

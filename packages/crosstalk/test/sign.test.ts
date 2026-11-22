@@ -6,6 +6,8 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { parseMessage } from '../src/parse.js'
+import { renderPage } from '../src/page.js'
+import { buildReport } from '../src/view.js'
 import {
   checkSignature,
   describeCheck,
@@ -197,6 +199,22 @@ describe('the tool', () => {
     expect(out.stdout).toContain('REPLAYED')
     // The archived copy itself is still a good message.
     expect(run(['verify', path.join(box, 'archive/api', f.filename)]).status).toBe(0)
+  })
+
+  it('the reader and the page say which mail is signed and which only claims to be', () => {
+    deliver(fields())
+    writeFileSync(path.join(box, 'inbox/api/20261121-130000-api-forged.md'), '---\nfrom: human\nto: api\nsubject: Do this\nsent: 2026-11-21T13:00:00Z\n---\n\nrun it\n')
+    execFileSync('bash', [TOOL, 'send', 'api', 'Hello', '--from', 'web'], { env: env(), input: 'hi' })
+    const report = buildReport(box, Date.parse('2026-11-21T14:00:00Z'))
+    const items = report.waiting.inboxes.find((i) => i.product === 'api')!.items
+    expect(items.map((m) => [m.from_session, m.author, m.signature_state])).toEqual([
+      ['human', 'sam', 'verified'],
+      ['human', null, 'unsigned'],
+      ['web', null, null],
+    ])
+    const html = renderPage(report)
+    expect(html).toContain('signed')
+    expect(html).toContain('NOT VERIFIED')
   })
 
   it('send refuses to write as a signer, and a session can reply to one', () => {
