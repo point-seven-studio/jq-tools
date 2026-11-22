@@ -18,6 +18,7 @@ Then open <http://127.0.0.1:4319>. Refresh to read again.
 
 ```sh
 npx @point-seven-studio/jq-agents --json             # print one snapshot
+npx @point-seven-studio/jq-agents --signals --json   # print the counts the signals page shows (--days 1 to 90, default 7)
 npx @point-seven-studio/jq-agents --html board.html  # write the page to a file
 npx @point-seven-studio/jq-agents --port 5000
 ```
@@ -36,6 +37,7 @@ Sessions are grouped by working tree (the git repository a session is in), becau
 ## What it reads, and what it does not send
 
 - It reads the tail of each session transcript under `~/.claude/projects`, a socket folder, and the process table.
+- The signals page (`/signals`) reads those transcripts whole, because a count needs every record. It keeps counts only, in memory, until the tool stops. No prompt, reply or command text is kept, and the page is not part of any snapshot `--watch` or `--json` hands on.
 - It is **read-only**. It never writes into a session, and there is no way to answer a session from the board. It writes two files of its own: its config, when you correct a label (see below), and a note in `~/.jq/running/` while the page is served (see Links to the other tools).
 - **Question text is off by default.** The board says a session is waiting, not what it asked. To show the question for sessions in chosen folders:
 
@@ -50,6 +52,30 @@ Sessions are grouped by working tree (the git repository a session is in), becau
 - **Nothing about your sessions leaves your machine** unless you pass one of two flags. Separately, the page asks npm once a day for the latest version number; see [The update check](#the-update-check). The two flags:
   - `--probe` times a TLS handshake to `api.anthropic.com` so the bottleneck line can name the network. Nothing is sent.
   - `--watch --exec CMD` hands each snapshot to a command of yours (below).
+
+## Signals
+
+`http://127.0.0.1:4319/signals` counts what Claude Code already wrote into its transcripts, over today, 7 days or 30 days. It follows the usual eight areas of AI observability, and under each one it names what a transcript cannot answer, so a missing number never reads as a zero.
+
+| Area | Counted from a transcript | Not in a transcript |
+| --- | --- | --- |
+| Traces | requests to the model, messages from a person, tool calls by tool, requests by subagents | nested spans, retrieval steps |
+| Token usage | input, cache read, cache write, output and thinking tokens; tokens a day and by folder; the context each active session carries; times a session was summarized | context as a share of the model limit |
+| Latency | a whole turn, thinking per reply, and each tool, as a median and the time 95 in 100 finish under | time to first token, tokens per second |
+| Quality drift | which models answered and on which days; which Claude Code versions ran | eval scores, groundedness, embedding drift, prompt diffs |
+| Errors | API errors by kind, retries, tool calls that failed or timed out, replies from a model other than the one asked for | schema or parse errors |
+| Cost | the estimate Claude Code records, by folder; the share of input read from cache; model mix by output | cost per request, budget alerts |
+| User feedback | interruptions, actions a person refused | thumbs, comments, edit rate, regenerations |
+| Safety signals | actions not allowed and why, replies the model refused, hooks that stopped a turn, commands run outside the sandbox | jailbreak, PII, toxicity and policy detection |
+
+Read these with care:
+
+- **Cost is an estimate, not a bill.** It is the figure Claude Code writes into the transcript. On a subscription it is not what you pay. It is written now and then, so the newest spending may be missing and one day can hold another day's share.
+- **Times include waiting.** A turn and a tool call are timed between records, so both include any wait for a permission answer.
+- **A failed tool call is often ordinary**: a test that fails, a search that finds nothing.
+- **A reply is counted once.** Claude Code writes one reply as several records, and a resumed session copies its history into a new file. Both are counted once, by the reply's id.
+- **The first page after a start is slow.** Every transcript touched in the window is read whole (about a second per gigabyte on the machine this was measured on), then only what was added.
+- The transcript format is a Claude Code internal. When it changes, a count falls to nothing. That may mean the format moved, not that the thing stopped.
 
 ## Sending snapshots somewhere
 
