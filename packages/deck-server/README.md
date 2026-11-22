@@ -52,7 +52,7 @@ jq-deck --watch --repos shop,api --exec "jq-deck-server send --url https://deck.
 
 `--url` takes the server's address, and the report goes to `/report` there. When the board is mounted inside another server under a path, give the full address ending in `/report` and it is used as written.
 
-A viewer opens the server's address and pastes their token into the sign-in page.
+A viewer opens the server's address and pastes their token into the sign-in page. Someone already signed in who opens `/login` is sent to the board.
 
 ### As a container
 

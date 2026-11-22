@@ -215,6 +215,19 @@ describe('the HTTP handler', () => {
     expect(ok.headers['set-cookie']).toMatch(/^jq_deck=jqv_.+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=2592000; Secure$/)
     expect(handle({ method: 'POST', path: '/login', body: `token=${viewer}` }, { ...ctx, secureCookie: false }).headers['set-cookie']).not.toContain('Secure')
     expect(handle({ method: 'POST', path: '/logout', body: '' }, ctx).headers['set-cookie']).toContain('Max-Age=0')
+    // Someone already signed in who opens /login goes straight to the board.
+    expect(handle({ method: 'GET', path: '/login', cookie: `jq_deck=${viewer}`, body: '' }, ctx)).toMatchObject({ status: 303, headers: { location: '/' } })
+    expect(handle({ method: 'GET', path: '/login', cookie: `other=1; jq_deck=${viewer}`, body: '' }, ctx).status).toBe(303)
+    // A cookie that is not a viewer's still gets the sign-in page: a machine token, a made-up one, an empty one.
+    for (const cookie of [`jq_deck=${machine}`, 'jq_deck=jqv_nope', 'jq_deck=', undefined]) {
+      const page = handle({ method: 'GET', path: '/login', cookie, body: '' }, ctx)
+      expect(page.status).toBe(200)
+      expect(page.body).toContain('Viewer token')
+    }
+    // A viewer who has been removed is not sent round in a circle: / sends them to /login, and /login shows the page.
+    remove(dir, 'lee')
+    expect(handle({ method: 'GET', path: '/login', cookie: `jq_deck=${viewer}`, body: '' }, ctx).status).toBe(200)
+    expect(handle({ method: 'GET', path: '/', cookie: `jq_deck=${viewer}`, body: '' }, ctx)).toMatchObject({ status: 303, headers: { location: '/login' } })
   })
 
   it('answers a health check without the data folder, and nothing else unknown', () => {
