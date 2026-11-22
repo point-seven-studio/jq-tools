@@ -40,20 +40,31 @@ function sessionsCell(r: RepoRow): string {
   return `<a href="/?tab=sessions">${r.sessions}</a> <span class="mut">(${r.live} live)</span>${need}${left}`
 }
 
-function overview(o: Overview): string {
+/** Opens the folder in VS Code, where a session started from the editor lives. The path stays on this machine: this is a link on a local page. */
+const editorLink = (tree: string) => `<a class="open" href="vscode://file${esc(encodeURI(tree))}">Open folder in VS Code</a>`
+
+/** `find` is a repository name a team board sent the reader here for, or null. */
+function overview(o: Overview, find: string | null = null): string {
   if (o.repos.length === 0) {
     return '<p class="card pad">No Claude Code session has been active in the window read, and this folder is not a project. Start a session, or run <code>jq-deck</code> inside a repository.</p>'
   }
   const rows = o.repos
     .map(
       (r) =>
-        `<tr><th scope="row">${esc(r.name)}<span class="path">${esc(r.tree)}</span></th><td data-l="Sessions">${sessionsCell(r)}</td><td data-l="Setup">${setupCell(r)}</td><td data-l="Mail">${mailCell(r)}</td></tr>`,
+        `<tr${find !== null && r.name === find ? ' class="found"' : ''}><th scope="row">${esc(r.name)}<span class="path">${esc(r.tree)}</span>${editorLink(r.tree)}</th><td data-l="Sessions">${sessionsCell(r)}</td><td data-l="Setup">${setupCell(r)}</td><td data-l="Mail">${mailCell(r)}</td></tr>`,
     )
     .join('')
   const unmatched = o.mail?.unmatched.length
     ? `<p class="mut note">Unread mail for an inbox with no repository on this page: ${o.mail.unmatched.map((u) => `${esc(u.inbox)} (${u.unread})`).join(', ')}. <a href="/?tab=mail">Open Mail</a>. To tie an inbox to a folder, add it under <code>names</code> in the config file.</p>`
     : ''
-  return `<div class="card"><table><thead><tr><th scope="col">Repository</th><th scope="col">Sessions</th><th scope="col">Setup</th><th scope="col">Mail</th></tr></thead><tbody>${rows}</tbody></table></div>${unmatched}`
+  const hit = find === null ? [] : o.repos.filter((r) => r.name === find)
+  const found =
+    find === null
+      ? ''
+      : hit.length > 0
+        ? `<p class="note found-note">The team board sent you here for <b>${esc(find)}</b>, marked below. ${hit.some((r) => r.needs_you > 0) ? 'A session in it is waiting on you.' : 'No session in it is waiting on you now.'}</p>`
+        : `<p class="note found-note">The team board sent you here for <b>${esc(find)}</b>, and no repository of that name has a session on this machine. The waiting session is on another machine.</p>`
+  return `${found}<div class="card"><table><thead><tr><th scope="col">Repository</th><th scope="col">Sessions</th><th scope="col">Setup</th><th scope="col">Mail</th></tr></thead><tbody>${rows}</tbody></table></div>${unmatched}`
 }
 
 function setupTab(o: Overview, asked: string | null): string {
@@ -75,9 +86,9 @@ function mailTab(o: Overview): string {
 }
 
 /** `bar` is the links to the other tools (presence.ts `toolbar`), or '' for a page with none. */
-export function renderShell(o: Overview, tab: Tab, repo: string | null, version: string, bar = ''): string {
+export function renderShell(o: Overview, tab: Tab, repo: string | null, version: string, bar = '', find: string | null = null): string {
   const body =
-    tab === 'overview' ? overview(o) : tab === 'sessions' ? '<iframe title="Sessions" src="/raw/sessions"></iframe>' : tab === 'setup' ? setupTab(o, repo) : mailTab(o)
+    tab === 'overview' ? overview(o, find) : tab === 'sessions' ? '<iframe title="Sessions" src="/raw/sessions"></iframe>' : tab === 'setup' ? setupTab(o, repo) : mailTab(o)
   const needs = o.repos.reduce((n, r) => n + r.needs_you, 0)
   const failing = o.repos.filter((r) => r.setup && r.setup.fail > 0).length
   const count: Record<Tab, number> = { overview: 0, sessions: needs, setup: failing, mail: o.mail?.total_unread ?? 0 }
@@ -110,6 +121,8 @@ tbody th{font-weight:600}.path{display:block;font-weight:400;font-size:12px;colo
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .chip{border:1px solid var(--line);border-radius:14px;padding:2px 10px;font-size:13px;text-decoration:none;color:var(--fg);background:var(--card)}
 .chip.on{border-color:var(--fg);font-weight:600}
+tr.found th,tr.found td{background:var(--well);box-shadow:inset 0 2px var(--warn),inset 0 -2px var(--warn)}.found-note{font-size:14px}
+.open{display:inline-block;font-weight:400;font-size:12px;margin-top:2px}
 code,pre{font:12px ui-monospace,monospace;background:var(--well);border-radius:4px;padding:1px 4px}pre{padding:10px;overflow-x:auto}
 @media (max-width:640px){thead{display:none}tr{display:block;border-top:1px solid var(--line);padding:8px 0}th,td{display:block;border:0;padding:3px 12px}td::before{content:attr(data-l) ": ";color:var(--mut);font-size:12px}}
 ${bar ? TOOLBAR_CSS : ''}</style></head><body>

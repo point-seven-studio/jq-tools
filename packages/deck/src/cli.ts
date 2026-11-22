@@ -172,7 +172,9 @@ export async function handle(url: string, host: string | undefined, ctx: Context
     const asked = u.searchParams.get('tab')
     const tab: Tab = (TABS as readonly string[]).includes(asked ?? '') ? (asked as Tab) : 'overview'
     const bar = toolbar({ here: 'deck', running: readRunning(ctx.runningDir), team: readTeamUrl(ctx.configFile) })
-    return html(renderShell(await overview(ctx.deck), tab, u.searchParams.get('repo'), ctx.version, bar))
+    // ?find=NAME is how a team board points at one repository: it knows names, never paths.
+    const find = u.searchParams.get('find')
+    return html(renderShell(await overview(ctx.deck), tab, u.searchParams.get('repo'), ctx.version, bar, find === null ? null : find.slice(0, 100)))
   }
   if (u.pathname === '/raw/sessions') {
     return html(renderSessions(await snapshot({ questionTrees: ctx.deck.questionTrees, maxAgeDays: ctx.deck.maxAgeDays, projectsDir: ctx.deck.projectsDir, sockDir: ctx.deck.sockDir, probe: ctx.probe, sample: ctx.sample, turnCheck: readTurnCheckConfig(ctx.configFile) })))

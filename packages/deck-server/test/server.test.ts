@@ -229,8 +229,10 @@ describe('the HTTP handler', () => {
     const page = handle({ method: 'GET', path: '/', cookie: `jq_deck=${viewer}`, body: '' }, ctx).body
     expect(page).not.toContain('<img')
     expect(page).toContain('&lt;img')
-    // The only addresses on the page are the reader's own machine: the links to the local tools.
-    expect(page.replace(/http:\/\/127\.0\.0\.1:\d+/g, '')).not.toMatch(/<script|https?:\/\//)
+    // The page loads nothing and runs nothing. The only addresses on it are links: to the
+    // reader's own machine, and to a reported repository's own page.
+    expect(page).not.toMatch(/<script|<img|<iframe|<link rel="stylesheet"| src="/)
+    expect(page.replace(/http:\/\/127\.0\.0\.1:\d+/g, '').replace(/<a href="https:\/\/[a-z0-9][a-z0-9.-]*(\/[A-Za-z0-9._~-]+)+" target="_blank" rel="noopener noreferrer">/g, '')).not.toMatch(/https?:\/\//)
     expect(page).toContain('aria-label="JQ tools"')
     expect(page).toContain('this page cannot see whether it is running')
     expect(renderTeam(buildTeam([], NOW), 'lee', 't')).toContain('None yet')
@@ -244,6 +246,12 @@ describe('the HTTP handler', () => {
     expect(page).toContain('<b>1<i> of 2</i></b><span>1 quiet: not counted</span>')
     expect(page).toContain('Waiting on a person <span>(1)</span>')
     expect(page).toContain('<b>Dana · <span class="mono">a</span></b><small>Answer on this machine</small>')
+    // A link to the reader's own JQ Deck, by the folder's name: no path leaves the server, because it holds none.
+    expect(page).toContain('<small>At a now? <a href="http://127.0.0.1:4316/?find=shop">Open it in JQ Deck there</a></small>')
+    expect(page).toContain('<a href="https://github.com/acme/shop" target="_blank" rel="noopener noreferrer">github.com/acme/shop</a>')
+    const odd = renderTeam(buildTeam([stored('a', 'Dana', 1, [repo({ name: 'a b&c"<x>', remote: null })])], NOW), 'owner', 't')
+    expect(odd).toContain('href="http://127.0.0.1:4316/?find=a%20b%26c%22%3Cx%3E"')
+    expect(odd).not.toContain('<x>')
     expect(page).toContain('<b>40 minutes</b><small>waiting</small>')
     expect(page).toContain("Dana's session asked 40 minutes ago")
     expect(page).toContain('Read at <b class="mono">12:00 UTC</b>')
@@ -289,7 +297,7 @@ describe('the HTTP handler', () => {
     expect(byMachine.match(/<tr class="r"/g)).toHaveLength(3)
     expect(byMachine.match(/<tr class="group">/g)).toHaveLength(2)
     expect(byMachine).toContain('<b class="mono">mac-mini2</b><span class="mono">Sandon · reporting</span>')
-    expect(byMachine).toContain('<b>rose</b><small class="mono">github.com/acme/rose</small>')
+    expect(byMachine).toContain('<b>rose</b><small class="mono"><a href="https://github.com/acme/rose" target="_blank" rel="noopener noreferrer">github.com/acme/rose</a></small>')
     // A filter chooses rows. It changes no total and does not shorten the waiting list.
     const fix = renderTeam(team, 'owner', 't', parseView('filter=fix&group=machine'))
     expect(fix.match(/<tr class="r"/g)).toHaveLength(2)
