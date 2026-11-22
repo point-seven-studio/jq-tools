@@ -47,7 +47,7 @@ Sessions are grouped by working tree (the git repository a session is in), becau
   From 0.1.7 the page says how, on each waiting row whose folder is off. There is a **Show question text for this folder** button, which saves the folder under `questions` in `~/.jq/config.json` (the key JQ Deck reads too), and a list of what you turned on, each with a way to turn it off. Beside the button is the option to add to your command instead, written out for that folder; click it once to select it.
 
   A folder turned on from the page applies to **the page only**. `--watch --exec` and `--json` hand a snapshot to something else, and for those only `--questions` counts. A click on a page never changes what a relay sends.
-- **Nothing leaves your machine** unless you pass one of two flags:
+- **Nothing about your sessions leaves your machine** unless you pass one of two flags. Separately, the page asks npm once a day for the latest version number; see [The update check](#the-update-check). The two flags:
   - `--probe` times a TLS handshake to `api.anthropic.com` so the bottleneck line can name the network. Nothing is sent.
   - `--watch --exec CMD` hands each snapshot to a command of yours (below).
 
@@ -78,6 +78,18 @@ console.log(totals(snap.sessions))
 - **macOS for the resource numbers.** Sampling uses `vm_stat`, `sysctl`, `iostat` and `nettop`. On Linux the session list works and those columns are blank.
 - **Liveness is matched by working tree,** not by session. Two sessions in one repository are both marked alive if either is.
 - It reads your own account's sessions only.
+
+## The update check
+
+When you start JQ Agents in a terminal to open its page, it asks npm once a day whether a newer version exists. If there is one, it prints one line and shows "Update" in the bar at the foot of the page, with the command to run. It installs nothing.
+
+- **What is sent:** one request to `https://registry.npmjs.org/@point-seven-studio/jq-agents/latest`. It carries nothing about your machine, your project or a session. npm sees the package's name and your network address, as it does when you install.
+- **When:** only when a person starts the page in a terminal. Never for `--json`, `--html` or `--watch`, never from a login job, never in CI.
+- **How often:** at most once a day. The answer is kept in `~/.jq/update-check.json`.
+- **If npm cannot be reached,** nothing happens and nothing is said. The page does not wait for it.
+- **To turn it off:** `--no-update-check`, or `JQ_NO_UPDATE_CHECK=1`, or `"updateCheck": false` in `~/.jq/config.json`.
+
+Each build fails if the command holds a second outbound call, or if this one points anywhere else.
 
 ## Stopped without a check
 

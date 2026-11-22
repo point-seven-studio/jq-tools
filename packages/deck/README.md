@@ -59,7 +59,7 @@ Optional. `~/.jq/config.json`, or the file named by `--config` or `$JQ_DECK_CONF
 - It is **read-only**. There is no way to answer a session or send mail from the page.
 - **Question text is off by default.** The page says a session is waiting, not what it asked. `--questions DIR,DIR` turns it on for sessions under those folders.
 - **Mail is shown in full** on the Mail tab, to anyone who can open the page on this machine.
-- **Nothing leaves your machine** unless you pass `--probe`, which times one connection to `api.anthropic.com` so the Sessions tab can name the network as a bottleneck, or `--watch --exec CMD`, which hands a report to a command of yours (below).
+- **Nothing about your sessions leaves your machine** unless you pass `--probe`, which times one connection to `api.anthropic.com` so the Sessions tab can name the network as a bottleneck, or `--watch --exec CMD`, which hands a report to a command of yours (below). Separately, the page asks npm once a day for the latest version number; see [The update check](#the-update-check).
 - The server listens on `127.0.0.1` only, answers only requests addressed to `127.0.0.1` or `localhost`, refuses anything but GET, and may not be framed by another site. The Setup tab checks only repositories the page lists: a URL carries an id, never a path.
 
 ## Reporting to a team board
@@ -96,7 +96,19 @@ jq-deck join --url https://deck.example.com --repos shop,api
 
 **On macOS, a login job cannot read Desktop, Documents or Downloads.** A repository kept there is still reported, but its row may have no git remote and no setup score. `join` tells you when this applies and gives the two ways out: give `node` Full Disk Access in System Settings, or keep the reporter in a terminal.
 
-It must be installed, not run through `npx`: the login job has to find it after a restart. It needs `jq-deck-server` installed too, which is what sends each report; `jq-deck` itself still makes no outbound call.
+It must be installed, not run through `npx`: the login job has to find it after a restart. It needs `jq-deck-server` installed too, which is what sends each report; `jq-deck` itself sends no report: its one outbound call is the update check, which a login job never makes.
+
+## The update check
+
+When you start JQ Deck in a terminal to open its page, it asks npm once a day whether a newer version exists. If there is one, it prints one line and shows "Update" in the bar at the foot of the page, with the command to run. It installs nothing.
+
+- **What is sent:** one request to `https://registry.npmjs.org/@point-seven-studio/jq-deck/latest`. It carries nothing about your machine, your project or a session. npm sees the package's name and your network address, as it does when you install.
+- **When:** only when a person starts the page in a terminal. Never for `--json`, `--watch`, `join` or `leave`, never from a login job, never in CI.
+- **How often:** at most once a day. The answer is kept in `~/.jq/update-check.json`.
+- **If npm cannot be reached,** nothing happens and nothing is said. The page does not wait for it.
+- **To turn it off:** `--no-update-check`, or `JQ_NO_UPDATE_CHECK=1`, or `"updateCheck": false` in `~/.jq/config.json`.
+
+Each build fails if the command holds a second outbound call, or if this one points anywhere else.
 
 ## As a library
 

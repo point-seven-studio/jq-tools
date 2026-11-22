@@ -3,8 +3,9 @@
  *
  * build.sh bundles this file and its imports into one file with no
  * dependency. It checks the folder it is run in. It has no --sync: this build holds no database
- * client and makes no network call of any kind. A test (groundcrew-public.test.ts) fails if the
- * bundle's source graph reaches a network or database module.
+ * client. It makes one network call, from update-check.ts: it asks npm for the latest version
+ * number, at most once a day, when a person starts the page. A test (groundcrew-public.test.ts)
+ * fails if any other file in the bundle's source graph reaches a network or database module.
  */
 import { DEFAULT_PORT, parseArgs, runLocal } from './groundcrew-cli.js'
 
@@ -14,7 +15,9 @@ const VERSION = typeof __GROUNDCREW_VERSION__ === 'string' ? __GROUNDCREW_VERSIO
 const HELP = `JQ Groundcrew ${VERSION}: the setup check for Claude Code.
 
 It reads how Claude Code is set up for a project and shows what to fix, with a prompt to copy
-for each fix. It runs on your machine and sends nothing anywhere.
+for each fix. It runs on your machine and sends nothing about your project
+anywhere. When you open the page it asks npm once a day for the latest version
+number; --no-update-check turns that off.
 
   jq-groundcrew [folder]               open a page at http://127.0.0.1:${DEFAULT_PORT}
   jq-groundcrew [folder] --html FILE   write the page to a file
@@ -33,7 +36,7 @@ try {
   const args = process.argv.slice(2)
   if (args.includes('--help') || args.includes('-h')) console.log(HELP)
   else if (args.includes('--version') || args.includes('-v')) console.log(VERSION)
-  else process.exitCode = runLocal(parseArgs(args, process.cwd()))
+  else process.exitCode = runLocal(parseArgs(args, process.cwd()), VERSION)
 } catch (error: any) {
   console.error(error.message || error)
   process.exit(1)

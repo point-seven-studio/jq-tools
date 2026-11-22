@@ -25,7 +25,8 @@ describe('the public bundle', () => {
       const imports = [...read(file).matchAll(/from '([^']+)'/g)].map((m) => m[1])
       for (const name of imports) {
         // presence.ts is the bar of links to the other tools; it is held to the same rule, above.
-        const ok = name.startsWith('./groundcrew-') || name === './presence.js' || allowed.has(name)
+        // update-check.ts is the one file that calls out. It is held by the test below and by scripts/check-outbound.mjs.
+        const ok = name.startsWith('./groundcrew-') || name === './presence.js' || name === './update-check.js' || allowed.has(name)
         expect(`${file} imports ${name}: ${ok ? 'ok' : 'NOT ALLOWED'}`).toBe(`${file} imports ${name}: ok`)
       }
     }
@@ -35,6 +36,16 @@ describe('the public bundle', () => {
       // The page holds one inline script that copies to the clipboard; it makes no request.
       expect(read(file)).not.toMatch(/supabase|dotenv|SERVICE_ROLE|\bfetch\(|https\.request|XMLHttpRequest|WebSocket|sendBeacon|await import\(/)
     }
+  })
+  test('calls out from one file only, to npm, for a version number', () => {
+    const source = read('../src/update-check.ts')
+    expect(source).toContain("export const REGISTRY = 'https://registry.npmjs.org'")
+    expect(source).toContain('`${REGISTRY}/${pkg}/latest`')
+    // It imports the filesystem, the OS and paths, and nothing that could send more.
+    expect([...source.matchAll(/from '([^']+)'/g)].map((m) => m[1]).sort()).toEqual(['fs', 'os', 'path'])
+    // One address is written in it, and the request has no body.
+    expect([...new Set(source.match(/https?:\/\/[a-zA-Z0-9./_-]+/g))].sort()).toEqual(['https://registry.npmjs.org', 'https://registry.npmjs.org/'])
+    expect(source).not.toMatch(/method:|body:|POST|PUT/)
   })
   test('listens on this machine only', () => {
     expect(read('../src/groundcrew-cli.ts')).toContain(".listen(parsed.port, '127.0.0.1'")

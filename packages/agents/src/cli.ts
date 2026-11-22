@@ -23,6 +23,7 @@ import { defaultConfigFile, readQuestionTrees, readTurnCheckConfig, writeQuestio
 import { applyQuestionsAction, parseQuestionsAction } from './questions.js'
 import { renderPage } from './page.js'
 import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
+import { startUpdateCheck } from './update-check.js'
 import { applyAction, parseAction } from './turn-check.js'
 
 export const DEFAULT_PORT = 4319
@@ -79,6 +80,7 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     else if (f === '--port') a.port = Number(value(i++, f))
     else if (f === '--questions') a.questionTrees = list(value(i++, f))
     else if (f === '--max-age-days') a.maxAgeDays = Number(value(i++, f))
+    else if (f === '--no-update-check') continue // read by update-check.ts
     else throw new Error(`unknown option: ${f}`)
   }
   if (!Number.isInteger(a.port) || a.port < 1 || a.port > 65535) throw new Error('--port needs a number from 1 to 65535')
@@ -149,7 +151,7 @@ function hand(cmd: string, snap: Snapshot): Promise<number> {
   })
 }
 
-export async function run(argv: string[]): Promise<void> {
+export async function run(argv: string[], version = 'dev'): Promise<void> {
   const a = parseArgs(argv, process.env)
   if (a.watch) {
     const tick = async () => {
@@ -179,6 +181,8 @@ export async function run(argv: string[]): Promise<void> {
     return
   }
   const token = randomBytes(16).toString('hex')
+  // Only here, where a person has started the page. --watch, --json and --html never ask.
+  const update = startUpdateCheck('@point-seven-studio/jq-agents', version, { configFile: a.configFile, say: (line) => console.log(`jq-agents: ${line}`) })
   // What the last served page showed. A form may only name a tree or a session from it.
   let shown: { trees: string[]; sessions: Record<string, string | null> } = { trees: [], sessions: {} }
   const headers = {
@@ -225,7 +229,7 @@ export async function run(argv: string[]): Promise<void> {
       }
       const snap = await collect(a, a.manage, true)
       shown = { trees: [...new Set(snap.sessions.map((r) => r.working_tree))], sessions: Object.fromEntries(snap.sessions.map((r) => [r.session_id, r.last_activity_at])) }
-      const bar = toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile) })
+      const bar = toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() })
       const page = renderPage(snap, Date.now(), a.manage ? { token, config: readTurnCheckConfig(a.configFile), questions: readQuestionTrees(a.configFile) } : undefined, bar)
       res.writeHead(200, headers)
       res.end(page)

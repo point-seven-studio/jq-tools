@@ -40,8 +40,10 @@ const HELP = `JQ Deck ${VERSION}: one page for your Claude Code sessions, their 
 
 It reads what jq-agents, jq-groundcrew and jq-crosstalk read. It writes a small note
 while its page runs, and nothing else unless you run join.
-The page is served to this machine only. Nothing leaves it unless you pass --exec
-(your command gets the report) or --probe (one timed connection).
+The page is served to this machine only. Nothing about your sessions leaves it
+unless you pass --exec (your command gets the report) or --probe (one timed
+connection). When you open the page it asks npm once a day for the latest version
+number; --no-update-check turns that off.
 
 Unofficial. Not affiliated with or endorsed by Anthropic.`
 

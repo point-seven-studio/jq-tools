@@ -12,6 +12,7 @@
 import { spawn } from 'child_process'
 import { createServer } from 'http'
 import { announce, readRunning, readTeamUrl, runningDir, toolbar } from './presence.js'
+import { startUpdateCheck, type UpdateNotice } from './update-check.js'
 import path from 'path'
 import { readTurnCheckConfig, renderPage as renderSessions, snapshot } from '@point-seven-studio/jq-agents'
 import { buildReport, renderPage as renderMail } from '@point-seven-studio/jq-crosstalk'
@@ -73,6 +74,7 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     if (f === '--json') a.json = true
     else if (f === '--watch') a.watch = true
     else if (f === '--quiet') a.quiet = true
+    else if (f === '--no-update-check') continue // read by update-check.ts
     else if (f === '--exec') a.exec = value(i++, f)
     else if (f === '--repos') a.repos = list(value(i++, f))
     else if (f === '--all-repos') a.allRepos = true
@@ -111,6 +113,8 @@ export interface Context {
   report: string[] | null
   /** Folders whose question text --watch may send. Empty unless asked for. */
   sendQuestions: string[]
+  /** Gives the newer version, when one is known. Set only where the page is served to a person. */
+  update?: () => UpdateNotice | null
 }
 
 /**
@@ -171,7 +175,7 @@ export async function handle(url: string, host: string | undefined, ctx: Context
   if (u.pathname === '/') {
     const asked = u.searchParams.get('tab')
     const tab: Tab = (TABS as readonly string[]).includes(asked ?? '') ? (asked as Tab) : 'overview'
-    const bar = toolbar({ here: 'deck', running: readRunning(ctx.runningDir), team: readTeamUrl(ctx.configFile) })
+    const bar = toolbar({ here: 'deck', running: readRunning(ctx.runningDir), team: readTeamUrl(ctx.configFile), update: ctx.update?.() ?? null })
     // ?find=NAME is how a team board points at one repository: it knows names, never paths.
     const find = u.searchParams.get('find')
     return html(renderShell(await overview(ctx.deck), tab, u.searchParams.get('repo'), ctx.version, bar, find === null ? null : find.slice(0, 100)))
@@ -233,6 +237,8 @@ export async function run(argv: string[], version: string): Promise<void> {
     console.log(JSON.stringify(await collectOverview(ctx.deck), null, 2))
     return
   }
+  // Only here, where a person has started the page. --watch, --json, join and leave never ask.
+  ctx.update = startUpdateCheck('@point-seven-studio/jq-deck', version, { configFile: ctx.configFile, say: (line) => console.log(`jq-deck: ${line}`) })
   createServer(async (req, res) => {
     let reply: Reply
     try {
