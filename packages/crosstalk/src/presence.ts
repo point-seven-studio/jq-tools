@@ -175,6 +175,8 @@ export interface ToolbarOptions {
   running: Record<ToolId, number | null> | null
   /** The team board's address, when this machine knows one. Ignored on the team board itself. */
   team?: string | null
+  /** A newer version of the tool serving this page, when one is known (update-check.ts). */
+  update?: { installed: string; latest: string; command: string } | null
 }
 
 const local = (port: number) => `http://127.0.0.1:${port}`
@@ -197,7 +199,13 @@ function teamItem(o: ToolbarOptions): string {
   return '<details><summary>Team board <small>not set up</small></summary><div><p>A team board shows every machine on a team on one page. This machine has no address for one.</p><p>If your team has one, add a <code>"team"</code> line holding its address to <code>~/.jq/config.json</code>.</p><p>To host one: <code>npx @point-seven-studio/jq-deck-server</code></p></div></details>'
 }
 
+function updateItem(o: ToolbarOptions): string {
+  if (!o.update) return ''
+  const u = o.update
+  return `<details><summary>Update <small>${esc(u.latest)} is out</small></summary><div><p>This is ${esc(u.installed)}. Version ${esc(u.latest)} is on npm.</p><p>To update: <code>${esc(u.command)}</code></p><p>Once a day this tool asks npm for the latest version number, and sends nothing else. To turn that off, start it with <code>--no-update-check</code>.</p></div></details>`
+}
+
 /** The bar's HTML. Put TOOLBAR_CSS in the page's style, and this just before </body>. */
 export function toolbar(o: ToolbarOptions): string {
-  return `<nav class="jqbar" aria-label="JQ tools">${TOOLS.map((t) => toolItem(t, o)).join('')}${teamItem(o)}</nav>`
+  return `<nav class="jqbar" aria-label="JQ tools">${TOOLS.map((t) => toolItem(t, o)).join('')}${teamItem(o)}${updateItem(o)}</nav>`
 }

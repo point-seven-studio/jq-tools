@@ -33,8 +33,10 @@ npx --no-install tsc -p "$HERE/tsconfig.build.json"
 [ -f "$HERE/dist/types/index.d.ts" ] || { echo "error: no type declarations were written" >&2; exit 1; }
 
 if [ "${1:-}" = "--check" ]; then
-  # No database client, no env loader, no outbound call from the page server.
-  if grep -n -E "@supabase|createClient\(|dotenv|SERVICE_ROLE|XMLHttpRequest|WebSocket|sendBeacon|fetch\(|https?\.request|node:https|from \"https\"" "$HERE/dist/jq-deck.mjs" "$HERE/dist/index.mjs"; then
+  # No database client, no env loader, and one outbound call from the command: the update
+  # check, held by check-outbound.mjs.
+  node "$HERE/../../scripts/check-outbound.mjs" "$HERE/dist/jq-deck.mjs" "$HERE/dist/index.mjs"
+  if grep -n -E "@supabase|createClient\(|dotenv|SERVICE_ROLE|XMLHttpRequest|WebSocket|sendBeacon|https?\.request|node:https|from \"https\"" "$HERE/dist/jq-deck.mjs" "$HERE/dist/index.mjs"; then
     echo "error: a bundle names a database client, an env loader or a network call" >&2
     exit 1
   fi

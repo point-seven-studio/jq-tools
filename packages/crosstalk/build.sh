@@ -7,9 +7,11 @@
 #   ./build.sh --check    build, then verify the bundles and run the tool end to end
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERSION="$(node -p "require('$HERE/package.json').version")"
 mkdir -p "$HERE/dist"
 for entry in main:view index:index sign-main:sign; do
   npx --no-install esbuild "$HERE/src/${entry%%:*}.ts" --bundle --platform=node --target=node18 --format=esm \
+    --define:__JQ_CROSSTALK_VERSION__="\"$VERSION\"" \
     --outfile="$HERE/dist/${entry##*:}.mjs" --log-level=warning
 done
 echo "built $HERE/dist (view.mjs $(wc -c < "$HERE/dist/view.mjs" | tr -d ' ') bytes)"
@@ -21,8 +23,10 @@ npx --no-install tsc -p "$HERE/tsconfig.build.json"
 
 if [ "${1:-}" = "--check" ]; then
   # The package promises plain files on your machine. Fail if a bundle or the tool
-  # names a database, an env loader or an outbound call.
-  if grep -n -E "supabase|dotenv|SERVICE_ROLE|fetch\(|https?\.request|node:https|from \"https\"|XMLHttpRequest|WebSocket|curl |wget " "$HERE/dist/view.mjs" "$HERE/dist/index.mjs" "$HERE/dist/sign.mjs" "$HERE/bin/crosstalk"; then
+  # names a database, an env loader or an outbound call. The one call allowed is the
+  # viewer's update check, held by check-outbound.mjs below.
+  node "$HERE/../../scripts/check-outbound.mjs" "$HERE/dist/view.mjs" "$HERE/dist/index.mjs" "$HERE/dist/sign.mjs" "$HERE/bin/crosstalk"
+  if grep -n -E "supabase|dotenv|SERVICE_ROLE|https?\.request|node:https|from \"https\"|XMLHttpRequest|WebSocket|curl |wget " "$HERE/dist/view.mjs" "$HERE/dist/index.mjs" "$HERE/dist/sign.mjs" "$HERE/bin/crosstalk"; then
     echo "error: the package names a database, an env loader or a network call" >&2
     exit 1
   fi

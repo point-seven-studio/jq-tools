@@ -13,6 +13,7 @@ import { createServer } from 'http'
 import { BOARD, boardPosts, deriveThreads, waitingBoard } from './board.js'
 import { renderPage, type Report } from './page.js'
 import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
+import { startUpdateCheck } from './update-check.js'
 import { readMailbox } from './read.js'
 
 export const DEFAULT_PORT = 4318
@@ -46,6 +47,7 @@ export function parseArgs(args: string[]): { root: string; html: string | null; 
     if (rest[i] === '--json') json = true
     else if (rest[i] === '--html') html = rest[++i] ?? null
     else if (rest[i] === '--port') port = Number(rest[++i])
+    else if (rest[i] === '--no-update-check') continue // read by update-check.ts
     else throw new Error(`unknown option: ${rest[i]}`)
   }
   if (rest.includes('--html') && !html) throw new Error('--html needs a file')
@@ -53,7 +55,7 @@ export function parseArgs(args: string[]): { root: string; html: string | null; 
   return { root, html, json, port }
 }
 
-export function run(args: string[]): void {
+export function run(args: string[], version = 'dev'): void {
   const parsed = parseArgs(args)
   if (parsed.json) {
     const { bodies: _bodies, ...rest } = buildReport(parsed.root)
@@ -65,10 +67,12 @@ export function run(args: string[]): void {
     console.log(`wrote ${parsed.html}`)
     return
   }
+  // Only here, where a person has started the page. --json and --html never ask.
+  const update = startUpdateCheck('@point-seven-studio/jq-crosstalk', version, { say: (line) => console.log(`crosstalk: ${line}`) })
   createServer((_req, res) => {
     try {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
-      res.end(renderPage(buildReport(parsed.root), toolbar({ here: 'crosstalk', running: readRunning(), team: readTeamUrl() })))
+      res.end(renderPage(buildReport(parsed.root), toolbar({ here: 'crosstalk', running: readRunning(), team: readTeamUrl(), update: update() })))
     } catch (e: any) {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       res.end(String(e?.message || e))

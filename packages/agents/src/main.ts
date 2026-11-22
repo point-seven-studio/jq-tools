@@ -22,8 +22,11 @@ const HELP = `JQ Agents ${VERSION}: what every Claude Code session on this machi
 
 It reads session transcripts under ~/.claude/projects and the process table. It is
 read-only: it never writes into a session. The one file it writes is its own
-config, when you correct a label on the board. Nothing leaves this machine unless
+config, when you correct a label on the board. Nothing about a session leaves this machine unless
 you pass --exec (your command gets the snapshot) or --probe (one timed connection).
+
+When you open the page it asks npm once a day for the latest version number;
+--no-update-check turns that off.
 
 Unofficial. Not affiliated with or endorsed by Anthropic.`
 
@@ -31,7 +34,7 @@ const args = process.argv.slice(2)
 if (args.includes('--help') || args.includes('-h')) console.log(HELP)
 else if (args.includes('--version') || args.includes('-v')) console.log(VERSION)
 else
-  run(args).catch((error: any) => {
+  run(args, VERSION).catch((error: any) => {
     console.error(error.message || error)
     process.exit(1)
   })

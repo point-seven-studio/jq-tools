@@ -4,7 +4,7 @@ The setup check for Claude Code.
 
 Groundcrew reads how Claude Code is set up for a project and shows you what to fix. Each fix comes with a prompt you can copy and paste into Claude Code.
 
-It runs on your machine. It sends nothing anywhere.
+It runs on your machine. It sends nothing about your project anywhere. When you open its page it asks npm once a day for the latest version number, and you can [turn that off](#the-update-check).
 
 ![The JQ Groundcrew page for a project: one check to fix, four to look at, five good, the list of what to do first, and the harness layer by layer.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/groundcrew/docs/screenshot.png)
 
@@ -148,11 +148,23 @@ It reads:
 
 It never opens a secrets file. It never reads a session transcript. The page lists every file it read.
 
-The page has one small script, which copies a prompt to your clipboard when you press Copy. It loads nothing from the network.
+The page has one small script, which copies a prompt to your clipboard when you press Copy. The page itself loads nothing from the network.
 
 ## The prompts
 
 A suggested prompt asks Claude Code to show its plan or its diff before it changes a file. Read that before you approve it. Groundcrew itself changes nothing.
+
+## The update check
+
+When you start JQ Groundcrew in a terminal to open its page, it asks npm once a day whether a newer version exists. If there is one, it prints one line and shows "Update" in the bar at the foot of the page, with the command to run. It installs nothing.
+
+- **What is sent:** one request to `https://registry.npmjs.org/@point-seven-studio/jq-groundcrew/latest`. It carries nothing about your machine, your project or a session. npm sees the package's name and your network address, as it does when you install.
+- **When:** only when a person starts the page in a terminal. Never for `--json` or `--html`, never from a login job, never in CI.
+- **How often:** at most once a day. The answer is kept in `~/.jq/update-check.json`.
+- **If npm cannot be reached,** nothing happens and nothing is said. The page does not wait for it.
+- **To turn it off:** `--no-update-check`, or `JQ_NO_UPDATE_CHECK=1`, or `"updateCheck": false` in `~/.jq/config.json`.
+
+Each build fails if the command holds a second outbound call, or if this one points anywhere else.
 
 ## Limits
 

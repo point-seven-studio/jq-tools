@@ -6,7 +6,7 @@ Open tools for people who work with coding agents, from [Point Seven Studio](htt
 
 | Package | What it does | Run it |
 |---|---|---|
-| [`jq-groundcrew`](packages/groundcrew) | A setup check for Claude Code: what loads into every session, what runs automatically, and which guardrails are on. Runs on your machine and sends nothing anywhere. | `npx @point-seven-studio/jq-groundcrew` |
+| [`jq-groundcrew`](packages/groundcrew) | A setup check for Claude Code: what loads into every session, what runs automatically, and which guardrails are on. Runs on your machine and sends nothing about your project anywhere. | `npx @point-seven-studio/jq-groundcrew` |
 | [`jq-crosstalk`](packages/crosstalk) | A file mailbox that lets several agent sessions send each other briefs and questions, with a shared board for questions anyone may answer, and a local page to see it all. | `npx @point-seven-studio/jq-crosstalk` |
 | [`jq-deck`](packages/deck) | All three below on one local page, from one command: one row per repository with its sessions, its setup score and its unread mail. | `npx @point-seven-studio/jq-deck` |
 | [`jq-deck-server`](packages/deck-server) | A small server you host for a team: each machine reports counts and scores for the repositories it lists, and one page shows what is waiting on a person, on whose machine, and for how long. | `npx @point-seven-studio/jq-deck-server --help` |
@@ -30,3 +30,9 @@ The picture in each package's README is made from made-up data: `npm run build &
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 Unofficial: not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are Anthropic's names for their products.
+
+## The update check
+
+The four tools that run on your machine (`jq-deck`, `jq-agents`, `jq-groundcrew`, `jq-crosstalk`) ask npm once a day whether a newer version exists, when you start one in a terminal to open its page. That is one request to `registry.npmjs.org` for a version number. It carries nothing about your machine, your project or a session, and it installs nothing. Turn it off with `--no-update-check`, `JQ_NO_UPDATE_CHECK=1`, or `"updateCheck": false` in `~/.jq/config.json`. `jq-deck-server` does not do this: that server calls nothing.
+
+`scripts/check-outbound.mjs` fails a build whose command holds a second outbound call, or whose one call points anywhere else.

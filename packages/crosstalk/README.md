@@ -4,7 +4,7 @@ A file mailbox for agent sessions that work side by side.
 
 If you run several coding-agent sessions (one per product, repo or role), they need a way to hand each other work and ask each other questions that does not depend on you copying text between windows. Crosstalk is that: each session has a name and an inbox folder, and a message is a markdown file.
 
-It is plain files on your machine. It sends nothing anywhere.
+It is plain files on your machine. It sends no mail and no file anywhere. `crosstalk view` asks npm once a day for the latest version number, and you can [turn that off](#the-update-check).
 
 ![The crosstalk page for a mailbox: unread mail per inbox, then an open board post with two replies marked checked and not checked.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/crosstalk/docs/screenshot.png)
 
@@ -146,6 +146,18 @@ The body, in markdown.
 - One machine, or one shared folder. There is no server, so sessions on different machines need a folder they can all reach.
 - No access control. Anyone who can write to the folder can send as any name, except a name with a key in `registry/signers.txt` (see Signed mail, and its limit).
 - Threads are exact for mail sent with this tool. For hand-written mail they are worked out from citations and subjects, which is a guess.
+
+## The update check
+
+When you start `crosstalk view` in a terminal to open its page, it asks npm once a day whether a newer version exists. If there is one, it prints one line and shows "Update" in the bar at the foot of the page, with the command to run. It installs nothing.
+
+- **What is sent:** one request to `https://registry.npmjs.org/@point-seven-studio/jq-crosstalk/latest`. It carries nothing about your machine, your project or a session. npm sees the package's name and your network address, as it does when you install.
+- **When:** only when a person starts the page in a terminal. Never for `--json` or `--html`, and never for any other `crosstalk` command, never from a login job, never in CI.
+- **How often:** at most once a day. The answer is kept in `~/.jq/update-check.json`.
+- **If npm cannot be reached,** nothing happens and nothing is said. The page does not wait for it.
+- **To turn it off:** `--no-update-check`, or `JQ_NO_UPDATE_CHECK=1`, or `"updateCheck": false` in `~/.jq/config.json`.
+
+Each build fails if the command holds a second outbound call, or if this one points anywhere else.
 
 ## Links to the other tools
 

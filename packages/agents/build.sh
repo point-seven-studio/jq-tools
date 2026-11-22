@@ -22,14 +22,16 @@ npx --no-install tsc -p "$HERE/tsconfig.build.json"
 
 if [ "${1:-}" = "--check" ]; then
   # No database client and no env loader, ever.
-  if grep -n -E "@supabase|createClient\(|dotenv|XMLHttpRequest|WebSocket|sendBeacon|fetch\(" "$HERE/dist/jq-agents.mjs" "$HERE/dist/index.mjs"; then
+  node "$HERE/../../scripts/check-outbound.mjs" "$HERE/dist/jq-agents.mjs" "$HERE/dist/index.mjs"
+  if grep -n -E "@supabase|createClient\(|dotenv|XMLHttpRequest|WebSocket|sendBeacon" "$HERE/dist/jq-agents.mjs" "$HERE/dist/index.mjs"; then
     echo "error: a bundle names a database client or an env loader" >&2
     exit 1
   fi
-  # Exactly one outbound destination exists in the code, behind --probe. A second
-  # one means something new can leave the machine and the README is now wrong.
+  # Exactly two outbound destinations exist in the code: one behind --probe, and npm's
+  # registry for the update check. A third means something new can leave the machine and
+  # the README is now wrong.
   HOSTS="$(grep -o -E "https?://[a-zA-Z0-9./_-]+" "$HERE/dist/jq-agents.mjs" | grep -v -E "^http://127\.0\.0\.1" | sort -u)"
-  [ "$HOSTS" = "https://api.anthropic.com/" ] || { echo "error: unexpected outbound address in the bundle:"; echo "$HOSTS"; exit 1; } >&2
+  [ "$HOSTS" = "$(printf 'https://api.anthropic.com/\nhttps://registry.npmjs.org')" ] || { echo "error: unexpected outbound address in the bundle:"; echo "$HOSTS"; exit 1; } >&2
   grep -q "Apache License" "$HERE/LICENSE" || { echo "error: the package must ship its licence" >&2; exit 1; }
   [ "$(node "$HERE/dist/jq-agents.mjs" --version)" = "$VERSION" ] || { echo "error: wrong version" >&2; exit 1; }
   T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT

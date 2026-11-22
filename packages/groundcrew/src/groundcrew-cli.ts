@@ -12,6 +12,7 @@ import { FAIL_ON_LEVELS, failing, layerSummary, runChecks, summarize, type FailO
 import { canRead, gather, tilde } from './groundcrew-gather.js'
 import { renderPage, type Report } from './groundcrew-page.js'
 import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
+import { startUpdateCheck } from './update-check.js'
 
 export const DEFAULT_PORT = 4317
 
@@ -66,7 +67,7 @@ export function exitCodeFor(checks: Report['checks'], failOn: FailOn | null): nu
  * Print the report, write the page, or serve it on this machine only. Returns the exit code
  * for --json and --html, which is 0 unless --fail-on counts a check.
  */
-export function runLocal(parsed: Parsed): number {
+export function runLocal(parsed: Parsed, version = 'dev'): number {
   const { project } = parsed
   if (parsed.flags.has('--json')) {
     const result = report(project)
@@ -79,13 +80,15 @@ export function runLocal(parsed: Parsed): number {
     console.log(`wrote ${parsed.html}`)
     return exitCodeFor(result.checks, parsed.failOn)
   }
+  // Only here, where a person has started the page. --json and --html never ask.
+  const update = startUpdateCheck('@point-seven-studio/jq-groundcrew', version, { say: (line) => console.log(`jq-groundcrew: ${line}`) })
   createServer((request, response) => {
     if (request.url !== '/') {
       response.writeHead(404).end('not found')
       return
     }
     // Every request reads the files again, so a refresh shows a change at once.
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(renderPage(report(project), toolbar({ here: 'groundcrew', running: readRunning(), team: readTeamUrl() })))
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(renderPage(report(project), toolbar({ here: 'groundcrew', running: readRunning(), team: readTeamUrl(), update: update() })))
   }).listen(parsed.port, '127.0.0.1', () => {
     // Tell the other JQ pages on this machine where this one is, until it stops.
     announce('groundcrew', parsed.port)

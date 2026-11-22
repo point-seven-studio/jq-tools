@@ -4,8 +4,9 @@
 #   ./build.sh            build
 #   ./build.sh --check    build, then verify the bundle and run it on this repository
 #
-# --check fails if the bundle names a database, an env loader or a network call: the package
-# promises to send nothing anywhere, and this is where that promise is enforced.
+# --check fails if the bundle names a database, an env loader or a network call other than
+# the update check: the package promises to send nothing about a project anywhere, and this
+# is where that promise is enforced.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(node -p "require('$HERE/package.json').version")"
@@ -29,7 +30,13 @@ npx --no-install tsc -p "$HERE/tsconfig.build.json"
 [ -f "$HERE/dist/types/index.d.ts" ] || { echo "error: no type declarations were written" >&2; exit 1; }
 
 if [ "${1:-}" = "--check" ]; then
-  if grep -n -E "supabase|dotenv|SERVICE_ROLE|fetch\(|https?\.request|node:https|require\(\"https\"\)|from \"https\"|XMLHttpRequest|WebSocket" "$OUT" "$HERE/dist/index.mjs"; then
+  # The one call allowed is the update check, held by check-outbound.mjs. The library holds
+  # it too, because it exports runLocal, the page server. A caller of the library never
+  # triggers it: runLocal asks npm only when it is handed a real version, and only the
+  # command does that.
+  node "$HERE/../../scripts/check-outbound.mjs" "$OUT"
+  node "$HERE/../../scripts/check-outbound.mjs" "$HERE/dist/index.mjs"
+  if grep -n -E "supabase|dotenv|SERVICE_ROLE|https?\.request|node:https|require\(\"https\"\)|from \"https\"|XMLHttpRequest|WebSocket" "$OUT" "$HERE/dist/index.mjs"; then
     echo "error: the bundle names a database, an env loader or a network call" >&2
     exit 1
   fi

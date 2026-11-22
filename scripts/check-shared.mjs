@@ -28,6 +28,35 @@ if (differ.length) {
 }
 console.log('presence.ts is the same in every package')
 
+// update-check.ts is the same file in the four tools that run on a person's machine.
+// jq-deck-server has no copy: that server calls nothing.
+const updateFile = (pkg) => path.join(root, 'packages', pkg, 'src', 'update-check.ts')
+const UPDATE_COPIES = ['agents', 'groundcrew', 'crosstalk']
+if (process.argv.includes('--write')) {
+  for (const pkg of UPDATE_COPIES) copyFileSync(updateFile(SOURCE), updateFile(pkg))
+  console.log(`copied packages/${SOURCE}/src/update-check.ts to ${UPDATE_COPIES.join(', ')}`)
+}
+const updateSource = readFileSync(updateFile(SOURCE), 'utf-8')
+const updateDiffer = UPDATE_COPIES.filter((pkg) => {
+  try {
+    return readFileSync(updateFile(pkg), 'utf-8') !== updateSource
+  } catch {
+    return true
+  }
+})
+if (updateDiffer.length) {
+  console.error(`update-check.ts differs from packages/${SOURCE} in: ${updateDiffer.join(', ')}. Run: node scripts/check-shared.mjs --write`)
+  process.exit(1)
+}
+try {
+  readFileSync(updateFile('deck-server'), 'utf-8')
+  console.error('packages/deck-server must not hold update-check.ts: that server calls nothing')
+  process.exit(1)
+} catch {
+  /* absent, as it should be */
+}
+console.log('update-check.ts is the same in the four local tools, and absent from the server')
+
 // The bar links each tool at the port in presence.ts. That must be the port the tool serves on.
 const PORT_SOURCE = { deck: 'deck/src/cli.ts', agents: 'agents/src/cli.ts', groundcrew: 'groundcrew/src/groundcrew-cli.ts', crosstalk: 'crosstalk/src/view.ts' }
 let wrong = 0
