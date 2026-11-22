@@ -88,7 +88,7 @@ export function runLocal(parsed: Parsed, version = 'dev'): number {
       return
     }
     // Every request reads the files again, so a refresh shows a change at once.
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(renderPage(report(project), toolbar({ here: 'groundcrew', running: readRunning(), team: readTeamUrl(), update: update() })))
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(renderPage(report(project), toolbar({ here: 'groundcrew', running: readRunning(), team: readTeamUrl(), update: update(), copy: true })))
   }).listen(parsed.port, '127.0.0.1', () => {
     // Tell the other JQ pages on this machine where this one is, until it stops.
     announce('groundcrew', parsed.port)

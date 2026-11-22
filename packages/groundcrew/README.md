@@ -148,7 +148,7 @@ It reads:
 
 It never opens a secrets file. It never reads a session transcript. The page lists every file it read.
 
-The page has one small script, which copies a prompt to your clipboard when you press Copy. The page itself loads nothing from the network.
+The page has two small scripts, and both only copy: one puts a suggested prompt on your clipboard when you press its Copy button, and one does the same for a command in the bar at the foot of the page. The page itself loads nothing from the network.
 
 ## The prompts
 

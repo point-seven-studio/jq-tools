@@ -98,6 +98,12 @@ jq-deck join --url https://deck.example.com --repos shop,api
 
 It must be installed, not run through `npx`: the login job has to find it after a restart. It needs `jq-deck-server` installed too, which is what sends each report; `jq-deck` itself sends no report: its one outbound call is the update check, which a login job never makes.
 
+## Copy buttons
+
+Wherever a page shows a command to run, there is a **Copy** button beside it: in the bar at the foot of the page, and on the command that makes a mailbox, and on the pages it shows from the other tools.
+
+That button is the one script the page runs. It copies the command beside the button you pressed and does nothing else: it reads no other part of the page and makes no request. Each page carries the same script, and the `jq-agents` page names it by its hash in a content policy. Where the script cannot run, the buttons stay hidden and the command can be selected by hand.
+
 ## The update check
 
 When you start JQ Deck in a terminal to open its page, it asks npm once a day whether a newer version exists. If there is one, it prints one line and shows "Update" in the bar at the foot of the page, with the command to run. It installs nothing.

@@ -10,6 +10,7 @@ import type { AgentStatusRow } from '../src/agent-status.js'
 import type { Snapshot } from '../src/collect.js'
 import { readQuestionTrees, writeQuestionTrees } from '../src/config.js'
 import { renderPage } from '../src/page.js'
+import { COPY_SCRIPT_TAG } from '../src/presence.js'
 import { applyQuestionsAction, parseQuestionsAction, questionsOption } from '../src/questions.js'
 import { EMPTY_CONFIG } from '../src/turn-check.js'
 
@@ -86,15 +87,17 @@ describe('the page', () => {
     const html = renderPage(snap([row()]), NOW, manage)
     expect(html).toContain('Question text is off for this folder')
     expect(html).toContain('<form method="post" action="/questions"><input type="hidden" name="token" value="tok123"><input type="hidden" name="action" value="show"><input type="hidden" name="tree" value="/code/shop"><button type="submit">Show question text for this folder</button></form>')
-    expect(html).toContain('<code class="copy">--questions &quot;/code/shop&quot;</code>')
+    expect(html).toContain('<span class="jqcp"><code>--questions &quot;/code/shop&quot;</code><button type="button" data-jqcopy hidden aria-label="Copy this command">Copy</button></span>')
     expect(html).toContain('It is shown on this page only')
   })
   it('gives the option alone, with no form, when the page cannot save', () => {
     const html = renderPage(snap([row()]), NOW)
-    expect(html).toContain('<code class="copy">--questions &quot;/code/shop&quot;</code>')
+    expect(html).toContain('<span class="jqcp"><code>--questions &quot;/code/shop&quot;</code><button type="button" data-jqcopy hidden aria-label="Copy this command">Copy</button></span>')
     expect(html).toContain('or add the folder under <code>&quot;questions&quot;</code>'.replace(/&quot;/g, '"'))
     expect(html).not.toContain('action="/questions"')
-    expect(html).not.toContain('<script')
+    // The page's one script is the Copy button's. A page shown inside JQ Deck carries it too.
+    expect(html.match(/<script/g)).toHaveLength(1)
+    expect(html).toContain(COPY_SCRIPT_TAG)
   })
   it('says nothing about it where there is nothing to turn on', () => {
     const answered = renderPage(snap([row({ waiting: false, state: 'live' })]), NOW, manage)

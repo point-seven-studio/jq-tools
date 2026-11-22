@@ -13,6 +13,7 @@ import { collectOverview } from '../src/collect.js'
 import { buildOverview, findMailbox, loadConfig, matchInbox, normalizeRemote, originIn, repoId, reportable, teamReport, type Overview, type SetupResult } from '../src/deck.js'
 import { remoteOf } from '../src/collect.js'
 import { pickRepo, renderShell } from '../src/page.js'
+import { COPY_SCRIPT_TAG } from '../src/presence.js'
 
 const NOW = Date.parse('2026-11-18T12:00:00Z')
 let dir: string
@@ -260,10 +261,12 @@ describe('the page', () => {
     expect(page).toContain('jq-crosstalk init')
     expect(page).not.toContain('<iframe')
   })
-  it('has no script and loads nothing from outside', () => {
+  it('runs one script, for the Copy button, and loads nothing from outside', () => {
     for (const tab of ['overview', 'sessions', 'setup', 'mail'] as const) {
       const page = renderShell(o, tab, null, '0')
-      expect(page).not.toMatch(/<script|https?:\/\//)
+      expect(page.match(/<script/g)).toHaveLength(1)
+      expect(page).toContain(COPY_SCRIPT_TAG)
+      expect(page.replace(COPY_SCRIPT_TAG, '')).not.toMatch(/<script|https?:\/\//)
     }
   })
 })

@@ -245,6 +245,8 @@ describe('the HTTP handler', () => {
     // The page loads nothing and runs nothing. The only addresses on it are links: to the
     // reader's own machine, and to a reported repository's own page.
     expect(page).not.toMatch(/<script|<img|<iframe|<link rel="stylesheet"| src="/)
+    // The local tools' pages have Copy buttons and one script for them. This page has neither.
+    expect(page).not.toMatch(/data-jqcopy|<button type="button"/)
     expect(page.replace(/http:\/\/127\.0\.0\.1:\d+/g, '').replace(/<a href="https:\/\/[a-z0-9][a-z0-9.-]*(\/[A-Za-z0-9._~-]+)+" target="_blank" rel="noopener noreferrer">/g, '')).not.toMatch(/https?:\/\//)
     expect(page).toContain('aria-label="JQ tools"')
     expect(page).toContain('this page cannot see whether it is running')

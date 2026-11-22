@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/cli.js'
 import { collectRows, snapshot, tailRecords } from '../src/collect.js'
 import { groupByTree, renderPage, totals } from '../src/page.js'
+import { COPY_SCRIPT_TAG } from '../src/presence.js'
 
 const NOW = Date.parse('2026-11-18T12:00:00Z')
 let dir: string
@@ -83,7 +84,10 @@ describe('snapshot and page', () => {
     const html = renderPage(snap, NOW)
     expect(html).toContain('Host not sampled.')
     expect(html).toContain('/Users/x/code/proj')
-    expect(html).not.toMatch(/<script|https?:\/\//)
+    // One script, the Copy button's, and no outside address.
+    expect(html.match(/<script/g)).toHaveLength(1)
+    expect(html).toContain(COPY_SCRIPT_TAG)
+    expect(html.replace(COPY_SCRIPT_TAG, '')).not.toMatch(/<script|https?:\/\//)
   })
 
   it('counts attention from state, shows a question only when allowed, and escapes it', () => {

@@ -44,7 +44,7 @@ Sessions are grouped by working tree (the git repository a session is in), becau
   ```
 
   The text is cut to 400 characters and strings shaped like secrets are removed. That removal is a pattern list, so it can miss one: only turn this on for folders where you would be content to read the session's last message on this screen.
-  From 0.1.7 the page says how, on each waiting row whose folder is off. There is a **Show question text for this folder** button, which saves the folder under `questions` in `~/.jq/config.json` (the key JQ Deck reads too), and a list of what you turned on, each with a way to turn it off. Beside the button is the option to add to your command instead, written out for that folder; click it once to select it.
+  From 0.1.7 the page says how, on each waiting row whose folder is off. There is a **Show question text for this folder** button, which saves the folder under `questions` in `~/.jq/config.json` (the key JQ Deck reads too), and a list of what you turned on, each with a way to turn it off. Beside the button is the option to add to your command instead, written out for that folder, with a Copy button.
 
   A folder turned on from the page applies to **the page only**. `--watch --exec` and `--json` hand a snapshot to something else, and for those only `--questions` counts. A click on a page never changes what a relay sends.
 - **Nothing about your sessions leaves your machine** unless you pass one of two flags. Separately, the page asks npm once a day for the latest version number; see [The update check](#the-update-check). The two flags:
@@ -78,6 +78,12 @@ console.log(totals(snap.sessions))
 - **macOS for the resource numbers.** Sampling uses `vm_stat`, `sysctl`, `iostat` and `nettop`. On Linux the session list works and those columns are blank.
 - **Liveness is matched by working tree,** not by session. Two sessions in one repository are both marked alive if either is.
 - It reads your own account's sessions only.
+
+## Copy buttons
+
+Wherever a page shows a command to run, there is a **Copy** button beside it: in the bar at the foot of the page, and on the option that turns question text on for a folder.
+
+That button is the one script the page runs. It copies the command beside the button you pressed and does nothing else: it reads no other part of the page and makes no request. The page's content policy names that script by its hash, so no other script can run there. Where the script cannot run, the buttons stay hidden and the command can be selected by hand.
 
 ## The update check
 
