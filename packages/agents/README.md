@@ -36,7 +36,7 @@ Sessions are grouped by working tree (the git repository a session is in), becau
 ## What it reads, and what it does not send
 
 - It reads the tail of each session transcript under `~/.claude/projects`, a socket folder, and the process table.
-- It is **read-only**. It never writes into a session, and there is no way to answer a session from the board. The one file it writes is its own config, when you correct a label: see below.
+- It is **read-only**. It never writes into a session, and there is no way to answer a session from the board. It writes two files of its own: its config, when you correct a label (see below), and a note in `~/.jq/running/` while the page is served (see Links to the other tools).
 - **Question text is off by default.** The board says a session is waiting, not what it asked. To show the question for sessions in chosen folders:
 
   ```sh
@@ -103,7 +103,7 @@ On the board, a labelled row has a **Why, and is it wrong?** link. It shows the 
 
 Everything you have corrected is listed at the bottom of the board, each with a button to take it back.
 
-Corrections are saved under the `turnCheck` key of `~/.jq/config.json` (or `--config FILE`). It is the only file JQ Agents writes, and other keys in it are left as they were. A save is accepted only from the page this process served: the request must name this server, come from this server's own page, and carry a token made when the process started. `--no-manage` serves the board with no forms at all. `--html`, `--json` and `--exec` never include the forms or the command text.
+Corrections are saved under the `turnCheck` key of `~/.jq/config.json` (or `--config FILE`). It is the only file of yours JQ Agents changes (the other is its own running note, under Links to the other tools), and other keys in it are left as they were. A save is accepted only from the page this process served: the request must name this server, come from this server's own page, and carry a token made when the process started. `--no-manage` serves the board with no forms at all. `--html`, `--json` and `--exec` never include the forms or the command text.
 
 ### Limits
 
@@ -111,6 +111,12 @@ Corrections are saved under the `turnCheck` key of `~/.jq/config.json` (or `--co
 - **Missed edits:** a write whose target is held in a variable, and a formatter or a generator, which change files without naming them.
 - **A check that a subagent ran is not counted.**
 - It reads tool names, shell commands and the error flag of a result, on your machine. One word per session goes into a snapshot, and none of the command.
+
+## Links to the other tools
+
+The served page has a bar at the bottom with a link to each of the other JQ tools. A tool that is running on this machine is a link to the port it is really on. One that is not says "not running" and gives the command that starts it. The team board is a link when `~/.jq/config.json` holds a `"team"` line with its address, and says "not set up" otherwise.
+
+How a page knows what is running, without a network call: while a tool serves its page it keeps a small note in `~/.jq/running/` (the tool, its port, its process id), and removes it when it stops. The other pages read those notes and ignore one whose process is gone. The bar is as of the last page load. A page written with `--html`, or shown inside JQ Deck, has no bar.
 
 ## Related tools
 

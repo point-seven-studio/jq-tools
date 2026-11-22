@@ -11,6 +11,7 @@ import path from 'path'
 import { FAIL_ON_LEVELS, failing, layerSummary, runChecks, summarize, type FailOn } from './groundcrew-core.js'
 import { canRead, gather, tilde } from './groundcrew-gather.js'
 import { renderPage, type Report } from './groundcrew-page.js'
+import { announce, readRunning, readTeamUrl, toolbar } from './presence.js'
 
 export const DEFAULT_PORT = 4317
 
@@ -84,7 +85,11 @@ export function runLocal(parsed: Parsed): number {
       return
     }
     // Every request reads the files again, so a refresh shows a change at once.
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(renderPage(report(project)))
-  }).listen(parsed.port, '127.0.0.1', () => console.log(`JQ Groundcrew for ${tilde(project)}: http://127.0.0.1:${parsed.port}  (Ctrl+C to stop)`))
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(renderPage(report(project), toolbar({ here: 'groundcrew', running: readRunning(), team: readTeamUrl() })))
+  }).listen(parsed.port, '127.0.0.1', () => {
+    // Tell the other JQ pages on this machine where this one is, until it stops.
+    announce('groundcrew', parsed.port)
+    console.log(`JQ Groundcrew for ${tilde(project)}: http://127.0.0.1:${parsed.port}  (Ctrl+C to stop)`)
+  })
   return 0
 }

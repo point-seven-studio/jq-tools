@@ -100,6 +100,10 @@ import { handle, buildTeam, readReports, readConfig, sanitizeReport } from '@poi
 - **A repository name is itself information.** That is why a machine must list what it reports.
 - A git remote written with an SSH host alias (`github.com-work:acme/shop`) is sent as written, so that repository will not group with the same one cloned without the alias.
 
+## Links to the other tools
+
+The team page has a bar at the bottom naming the four local tools. A page served from a server cannot see a viewer's computer, so it does not say whether a tool is running there. Each name opens a short note with the address the tool would be at on the viewer's own machine (`http://127.0.0.1:` and its usual port) and the command that starts it. The page still loads nothing and runs no script.
+
 ## Related tools
 
 - [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck): all of these on one local page, from one command.

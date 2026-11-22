@@ -16,7 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const read = (file: string) => readFileSync(path.join(here, file), 'utf-8')
 
 /** Everything the bundle is built from. */
-const PUBLIC_SOURCES = ['../src/main.ts', '../src/groundcrew-cli.ts', '../src/groundcrew-core.ts', '../src/groundcrew-gather.ts', '../src/groundcrew-page.ts']
+const PUBLIC_SOURCES = ['../src/main.ts', '../src/groundcrew-cli.ts', '../src/groundcrew-core.ts', '../src/groundcrew-gather.ts', '../src/groundcrew-page.ts', '../src/presence.ts']
 
 describe('the public bundle', () => {
   test('is built only from files that import the filesystem, the OS, paths and a local server', () => {
@@ -24,7 +24,8 @@ describe('the public bundle', () => {
     for (const file of PUBLIC_SOURCES) {
       const imports = [...read(file).matchAll(/from '([^']+)'/g)].map((m) => m[1])
       for (const name of imports) {
-        const ok = name.startsWith('./groundcrew-') || allowed.has(name)
+        // presence.ts is the bar of links to the other tools; it is held to the same rule, above.
+        const ok = name.startsWith('./groundcrew-') || name === './presence.js' || allowed.has(name)
         expect(`${file} imports ${name}: ${ok ? 'ok' : 'NOT ALLOWED'}`).toBe(`${file} imports ${name}: ok`)
       }
     }

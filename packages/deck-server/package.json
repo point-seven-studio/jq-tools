@@ -1,6 +1,6 @@
 {
   "name": "@point-seven-studio/jq-deck-server",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "A small server for a team's JQ Deck: each machine reports counts and scores per repository, and one page shows what is waiting on a person across the team. Self-hosted; stores files in one folder; no dependency. Unofficial; not affiliated with or endorsed by Anthropic.",
   "bin": {
     "jq-deck-server": "dist/jq-deck-server.mjs"

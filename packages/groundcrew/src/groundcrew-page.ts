@@ -9,6 +9,7 @@
  * already good, and plain facts, are one line each, so they do not bury the fixes. Status is
  * never color alone: each row has an icon and a word. Light and dark follow the system.
  */
+import { TOOLBAR_CSS } from './presence.js'
 import { LAYERS, layerSummary, type Check, type Group, type LayerSummary, type Status, type Summary } from './groundcrew-core.js'
 
 export interface Report {
@@ -120,7 +121,8 @@ function layerPanel(checks: Check[]): string {
   )
 }
 
-export function renderPage(report: Report): string {
+/** `toolsBar` is the links to the other tools (presence.ts `toolbar`), or '' for a page with none, such as one shown inside JQ Deck. */
+export function renderPage(report: Report, toolsBar = ''): string {
   const { summary } = report
   const judged = summary.pass + summary.warn + summary.fail
   const bar = (['fail', 'warn', 'pass'] as const)
@@ -142,7 +144,7 @@ export function renderPage(report: Report): string {
   }).join('')
   return (
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    `<title>JQ Groundcrew: ${esc(report.project)}</title><style>${CSS}</style></head><body><main>` +
+    `<title>JQ Groundcrew: ${esc(report.project)}</title><style>${CSS}${toolsBar ? TOOLBAR_CSS : ''}</style></head><body><main>` +
     `<h1>JQ Groundcrew</h1><p class="mut">The setup check for Claude Code. How it is set up for <code>${esc(report.project)}</code>. Read ${esc(report.generatedAt)}. Refresh to read again.</p>` +
     '<div class="score">' +
     `<div class="tile"><b>${summary.fail}</b><span>to fix</span></div><div class="tile"><b>${summary.warn}</b><span>to look at</span></div>` +
@@ -157,6 +159,6 @@ export function renderPage(report: Report): string {
     '<p>A suggested prompt asks Claude Code to show its plan or its diff first. Read that before you approve it.</p>' +
     `<ul>${report.filesRead.map((file) => `<li><code>${esc(file)}</code></li>`).join('')}</ul>` +
     '<p>Each check names the page of Anthropic’s Claude Code documentation it rests on. The documentation was checked on 2026-11-14 and can change.</p></footer>' +
-    `</main><script>${COPY_SCRIPT}</script></body></html>\n`
+    `</main>${toolsBar}<script>${COPY_SCRIPT}</script></body></html>\n`
   )
 }

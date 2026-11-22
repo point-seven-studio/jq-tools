@@ -11,6 +11,7 @@
  */
 import { spawn } from 'child_process'
 import { createServer } from 'http'
+import { announce, readRunning, readTeamUrl, runningDir, toolbar } from './presence.js'
 import path from 'path'
 import { readTurnCheckConfig, renderPage as renderSessions, snapshot } from '@point-seven-studio/jq-agents'
 import { buildReport, renderPage as renderMail } from '@point-seven-studio/jq-crosstalk'
@@ -93,6 +94,8 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
 }
 
 export interface Context {
+  /** Where running tools leave their notes (presence.ts), read for the links at the foot of the page. */
+  runningDir: string
   /** The config file, read again on each page load for corrections made on the JQ Agents board. */
   configFile: string
   port: number
@@ -122,6 +125,7 @@ export function reportList(a: Pick<Args, 'repos' | 'allRepos'>, fromConfig: stri
 export function buildContext(a: Args, env: Record<string, string | undefined>, cwd: string, version: string): Context {
   const config = loadConfig(expandHome(a.config))
   return {
+    runningDir: runningDir(env),
     configFile: expandHome(a.config),
     port: a.port,
     version,
@@ -163,7 +167,8 @@ export async function handle(url: string, host: string | undefined, ctx: Context
   if (u.pathname === '/') {
     const asked = u.searchParams.get('tab')
     const tab: Tab = (TABS as readonly string[]).includes(asked ?? '') ? (asked as Tab) : 'overview'
-    return html(renderShell(await overview(ctx.deck), tab, u.searchParams.get('repo'), ctx.version))
+    const bar = toolbar({ here: 'deck', running: readRunning(ctx.runningDir), team: readTeamUrl(ctx.configFile) })
+    return html(renderShell(await overview(ctx.deck), tab, u.searchParams.get('repo'), ctx.version, bar))
   }
   if (u.pathname === '/raw/sessions') {
     return html(renderSessions(await snapshot({ questionTrees: ctx.deck.questionTrees, maxAgeDays: ctx.deck.maxAgeDays, projectsDir: ctx.deck.projectsDir, sockDir: ctx.deck.sockDir, probe: ctx.probe, sample: ctx.sample, turnCheck: readTurnCheckConfig(ctx.configFile) })))
@@ -236,6 +241,8 @@ export async function run(argv: string[], version: string): Promise<void> {
     })
     res.end(reply.body)
   }).listen(a.port, '127.0.0.1', () => {
+    // Tell the other JQ pages on this machine where this one is, until it stops.
+    announce('deck', a.port, ctx.runningDir)
     console.log(`jq-deck: http://127.0.0.1:${a.port} (Ctrl-C to stop)`)
     console.log(ctx.deck.mailbox ? `jq-deck: mailbox ${ctx.deck.mailbox}` : 'jq-deck: no mailbox found (pass --mailbox DIR to show mail)')
   })

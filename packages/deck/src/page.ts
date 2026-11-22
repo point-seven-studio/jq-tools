@@ -4,6 +4,7 @@
  * no outside request. Every value is escaped: names and paths come from disk.
  */
 import type { Overview, RepoRow } from './deck.js'
+import { TOOLBAR_CSS } from './presence.js'
 
 export const TABS = ['overview', 'sessions', 'setup', 'mail'] as const
 export type Tab = (typeof TABS)[number]
@@ -73,7 +74,8 @@ function mailTab(o: Overview): string {
   return '<iframe title="Mailbox" src="/raw/mail"></iframe>'
 }
 
-export function renderShell(o: Overview, tab: Tab, repo: string | null, version: string): string {
+/** `bar` is the links to the other tools (presence.ts `toolbar`), or '' for a page with none. */
+export function renderShell(o: Overview, tab: Tab, repo: string | null, version: string, bar = ''): string {
   const body =
     tab === 'overview' ? overview(o) : tab === 'sessions' ? '<iframe title="Sessions" src="/raw/sessions"></iframe>' : tab === 'setup' ? setupTab(o, repo) : mailTab(o)
   const needs = o.repos.reduce((n, r) => n + r.needs_you, 0)
@@ -110,7 +112,7 @@ tbody th{font-weight:600}.path{display:block;font-weight:400;font-size:12px;colo
 .chip.on{border-color:var(--fg);font-weight:600}
 code,pre{font:12px ui-monospace,monospace;background:var(--well);border-radius:4px;padding:1px 4px}pre{padding:10px;overflow-x:auto}
 @media (max-width:640px){thead{display:none}tr{display:block;border-top:1px solid var(--line);padding:8px 0}th,td{display:block;border:0;padding:3px 12px}td::before{content:attr(data-l) ": ";color:var(--mut);font-size:12px}}
-</style></head><body>
+${bar ? TOOLBAR_CSS : ''}</style></head><body>
 <header>
 <h1>JQ Deck</h1>
 <p class="head">${esc(o.headline)}</p>
@@ -119,5 +121,5 @@ code,pre{font:12px ui-monospace,monospace;background:var(--well);border-radius:4
 </header>
 <main>${body}</main>
 <footer class="mut" style="max-width:1000px;width:100%;margin:0 auto;padding:0 16px 16px">JQ Deck ${esc(version)} · this machine only</footer>
-</body></html>`
+${bar}</body></html>`
 }
