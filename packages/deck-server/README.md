@@ -4,7 +4,7 @@ One page for a team: which Claude Code sessions are waiting on a person, on whos
 
 Each machine runs [jq-deck](https://www.npmjs.com/package/@point-seven-studio/jq-deck) and reports counts and scores for the repositories it chooses. This server keeps the latest report from each machine and shows them together. You host it yourself, so your team's data stays on your own systems.
 
-![The JQ Deck team page: totals, an amber strip naming the longest wait, and one card per repository with a row per machine.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck-server/docs/screenshot.png)
+![The JQ Deck team page: totals, the list of everything waiting on a person, and one table with a row per folder each machine reported.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck-server/docs/screenshot.png)
 
 *The data in the picture is made up.*
 
@@ -65,13 +65,15 @@ The data folder is `/data`. Mount a volume there, or a restart forgets every tok
 ## The page
 
 - **The line at the top** says how many sessions are waiting on a person and which has waited longest.
-- **Four totals:** sessions waiting on a person, sessions (and how many are live), machines reporting out of machines known, and setup items to fix. They add up what the machines reporting now sent. The server works out no score of its own.
-- **An amber strip,** only while something waits: the repository that has waited longest, whose machine it is on, and for how long. Answer it in the session on that machine.
-- **One card per repository,** with a row per machine: sessions, waiting, setup score, unread mail, and when the machine was last heard from. Where a machine opted in, what its waiting sessions asked is under its row. The same repository on two machines is one card when both have the same git remote.
-- **Machines and Setup,** side by side below: when each machine was last heard from, and each setup check that was reported.
-- **A machine not heard from for 5 minutes is not counted.** Its rows stay, greyed, marked "not current". After a day its rows are hidden and it is listed as silent. Old numbers never look current.
+- **Four totals:** sessions waiting on a person, sessions (and how many are live), machines reporting out of machines known, and setup items to fix, with the items to look at beside it. They add up what the machines reporting now sent. The server works out no score of its own.
+- **The waiting list,** only while something waits: every reported folder with a waiting session, longest wait first, each with its person, its machine and how long. A machine reports a count per folder, not a list of sessions, so a folder with two waiting sessions is one line that says two. Answer each in the session on that machine.
+- **Reports:** one table, one row per folder a machine reported, with sessions, waiting, setup score, unread mail, and when the machine was last heard from. Where a machine opted in, what its waiting sessions asked is under its row.
+- **Two folders of one repository on one machine are two rows.** Folders that share a git remote sit under one repository heading, and each row names its folder. This is what a worktree beside its main clone looks like. Rows are never merged.
+- **Group by repository or by machine, search, filter and sort.** These are links and one small form, and the choice is kept in the page's address (`?group=machine&filter=waiting&sort=setup&q=shop`), so it survives the reload and can be bookmarked. They choose and order rows. They change no total, and the waiting list always shows everything.
+- **Machines and Setup checks,** side by side below. A machine is listed once however many folders it reports. The setup panel lists the checks with something to do and counts the rest; "to fix" and "to look at" are two counts and are never added together.
+- **A machine not heard from for 5 minutes is not counted.** Its rows stay, greyed, marked "not current", and are never listed as waiting or live. After a day its rows are hidden and it is listed as silent. Old numbers never look current.
 - **Unknown is never shown as zero.** No inbox, no setup check and no reported wait each show a dash with the reason beside it.
-- The page reloads every minute. It is read-only: there is no way to answer a session from it. The links at the side jump to parts of the same page. It follows the reader's light or dark setting.
+- The page reloads every minute. It is read-only: there is no way to answer a session from it. It runs no script. It follows the reader's light or dark setting.
 
 `GET /api/team` returns the same as JSON, with `Authorization: Bearer <viewer token>`.
 

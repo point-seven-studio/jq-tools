@@ -13,6 +13,7 @@ import { reportUrl, send } from '../src/send.js'
 import { handle, startServer, type ServerContext } from '../src/server.js'
 import { addMachine, addViewer, initStore, machineFor, readConfig, readReports, remove, viewerFor } from '../src/store.js'
 import { buildTeam, duration, freshness, visible } from '../src/team.js'
+import { DEFAULT_VIEW, parseView, select, viewHref, waitingRows } from '../src/view.js'
 import type { StoredReport } from '../src/store.js'
 
 const NOW = Date.parse('2026-11-19T12:00:00Z')
@@ -235,34 +236,80 @@ describe('the HTTP handler', () => {
     expect(renderTeam(buildTeam([], NOW), 'lee', 't')).toContain('None yet')
   })
 
-  it('puts what needs a person in the tab title, the totals and the strip, and says when each question was asked', () => {
+  it('puts what needs a person in the tab title, the totals and the waiting list, and says when each question was asked', () => {
     const asked = repo({ questions: [{ asked_at: '2026-11-19T11:20:00.000Z', text: 'Shall I merge it?' }] })
     const page = renderTeam(buildTeam([stored('a', 'Dana', 1, [asked]), stored('b', 'Lee', 90, [repo()])], NOW), 'owner', 't')
     expect(page).toContain('<title>(1) JQ Deck: team</title>')
     expect(page).toContain('<div class="metric hot"><dt>Waiting on a person</dt><dd><b>1</b><span>in 1 repository</span>')
-    expect(page).toContain('<b>1<small> of 2</small></b><span>1 quiet: not counted</span>')
-    expect(page).toContain('Needs attention · 1 waiting session')
-    expect(page).toContain('shop is waiting on a person')
-    expect(page).toContain('Dana on a. Answer in the session on that machine.')
-    expect(page).toContain('<b>40 minutes</b><span>longest wait</span>')
+    expect(page).toContain('<b>1<i> of 2</i></b><span>1 quiet: not counted</span>')
+    expect(page).toContain('Waiting on a person <span>(1)</span>')
+    expect(page).toContain('<b>Dana · <span class="mono">a</span></b><small>Answer on this machine</small>')
+    expect(page).toContain('<b>40 minutes</b><small>waiting</small>')
     expect(page).toContain("Dana's session asked 40 minutes ago")
     expect(page).toContain('Read at <b class="mono">12:00 UTC</b>')
     expect(page).toContain('Signed in as <b>owner</b>')
     expect(page).toContain('<form method="post" action="/logout"><button>Sign out</button></form>')
     expect(page).toContain('<meta http-equiv="refresh" content="60">')
-    // Read-only: signing out is the one thing the page can send.
-    expect(page.match(/<form/g)).toHaveLength(1)
-    expect(page).not.toMatch(/<input|<textarea|<select/)
+    // Read-only: signing out is the one thing the page can post. The other form only chooses what to show.
+    expect(page.match(/<form[^>]*method="post"/g)).toHaveLength(1)
+    expect(page.match(/<form/g)).toHaveLength(2)
+    expect(page).toContain('<form class="find" method="get" action="/#reports"')
+    expect(page).not.toMatch(/<textarea|type="text"|type="file"/)
+  })
+
+  it('lists every waiting report, longest wait first, on its own machine', () => {
+    // The state on the live board: one repository in two folders on one machine, and a second machine.
+    const reports = [
+      stored('sandon-air', 'Sandon', 0, [repo({ name: 'hivejournal-2026', remote: 'github.com/p7/hivejournal-2026', sessions: 1, live: 1, waiting_since: '2026-11-19T11:58:00Z', setup: { score: 60, fail: 1, warn: 0 }, unread: null })]),
+      stored('mac-mini2', 'Sandon', 0, [
+        repo({ name: 'rose-gap-advisor', remote: 'github.com/acme/rose', sessions: 8, live: 1, waiting_since: '2026-11-19T11:54:00Z', setup: { score: 55, fail: 0, warn: 5 }, unread: null }),
+        repo({ name: 'rose', remote: 'github.com/acme/rose', sessions: 1, live: 0, needs_you: 0, waiting_since: null, setup: { score: 58, fail: 1, warn: 0 }, unread: null }),
+      ]),
+    ]
+    const team = buildTeam(reports, NOW)
+    expect(waitingRows(team).map((r) => [r.name, r.machine, r.waiting_minutes])).toEqual([['rose-gap-advisor', 'mac-mini2', 6], ['hivejournal-2026', 'sandon-air', 2]])
+    const page = renderTeam(team, 'owner', 't')
+    expect(page.match(/Answer on this machine/g)).toHaveLength(2)
+    expect(page.indexOf('<b>6 minutes</b><small>waiting</small>')).toBeLessThan(page.indexOf('<b>2 minutes</b><small>waiting</small>'))
+    expect(page.indexOf('<b>6 minutes</b><small>waiting</small>')).toBeGreaterThan(0)
+    // Two folders of one repository on one machine stay two rows, each named by its folder.
+    expect(page).toContain('<small>folder <span class="mono">rose-gap-advisor</span></small>')
+    expect(page).toContain('<small>folder <span class="mono">rose</span></small>')
+    expect(page).toContain('2 reports · 1 waiting')
+    expect(page.match(/<tr class="r"/g)).toHaveLength(3)
+    // One machine is listed once, with its two reports and its one repository.
+    expect(page).toContain('Sandon · 2 reports · 1 repository')
+    expect(page).toContain('<b>2<i> of 2</i></b>')
+    // "To fix" and "to look at" are never added together.
+    expect(page).toContain('<dt>Setup items to fix</dt><dd><b>2</b><span>plus 5 to look at, in 3 setup checks</span>')
+    expect(page).toContain('<span class="look">5 to look at</span>')
+    expect(page).toContain('<dt>Sessions</dt><dd><b>10<i> · 2 live</i></b><span>in 3 reports</span>')
+    // Grouped by machine: the same three rows, under two machines.
+    const byMachine = renderTeam(team, 'owner', 't', parseView('group=machine'))
+    expect(byMachine.match(/<tr class="r"/g)).toHaveLength(3)
+    expect(byMachine.match(/<tr class="group">/g)).toHaveLength(2)
+    expect(byMachine).toContain('<b class="mono">mac-mini2</b><span class="mono">Sandon · reporting</span>')
+    expect(byMachine).toContain('<b>rose</b><small class="mono">github.com/acme/rose</small>')
+    // A filter chooses rows. It changes no total and does not shorten the waiting list.
+    const fix = renderTeam(team, 'owner', 't', parseView('filter=fix&group=machine'))
+    expect(fix.match(/<tr class="r"/g)).toHaveLength(2)
+    expect(fix).toContain('Reports <span>(2 of 3)</span>')
+    expect(fix).toContain('<dt>Waiting on a person</dt><dd><b>2</b>')
+    expect(fix.match(/Answer on this machine/g)).toHaveLength(2)
+    expect(fix).toContain('<input type="hidden" name="group" value="machine"><input type="hidden" name="filter" value="fix">')
+    expect(fix).toContain('<a href="?group=machine#reports">All reports<i>3</i></a>')
+    expect(fix).toContain('<a href="?group=machine&amp;filter=fix#reports" aria-current="true">Setup to fix<i>2</i></a>')
   })
 
   it('shows nothing amber when all is clear, and no totals when no machine is known', () => {
     const calm = renderTeam(buildTeam([stored('a', 'Dana', 1, [repo({ needs_you: 0, waiting_since: null })])], NOW), 'owner', 't')
     expect(calm).toContain('<title>JQ Deck: team</title>')
-    expect(calm).not.toMatch(/class="metric hot"|class="strip|class="chip hot"/)
+    expect(calm).not.toMatch(/class="metric hot"|class="queue"|class="count hot"|class="hot"/)
     expect(calm).toContain('<span>nothing waiting</span>')
-    expect(calm).toContain('<span class="chip">none waiting</span>')
+    expect(calm).toContain('No session is reported waiting on a person.')
+    expect(calm).toContain('1 report · none waiting')
     const none = renderTeam(buildTeam([], NOW), 'owner', 't')
-    expect(none).not.toMatch(/class="metrics"|class="strip/)
+    expect(none).not.toMatch(/class="metrics"|class="queue"|class="strip"|class="calm"|class="find"/)
     expect(none).toContain('No machine has reported yet.')
     expect(none).toContain('No repository to show.')
     expect(none).toContain('no machine reporting')
@@ -270,45 +317,88 @@ describe('the HTTP handler', () => {
   })
 
   it('never shows an old report as current', () => {
-    const stale = renderTeam(buildTeam([stored('a', 'Dana', 30, [repo()])], NOW), 'owner', 't')
+    const team = buildTeam([stored('a', 'Dana', 30, [repo()])], NOW)
+    const stale = renderTeam(team, 'owner', 't')
     expect(stale).toContain('<p class="kick">Not current</p>')
-    expect(stale).not.toMatch(/class="strip hot"|class="metric hot"|class="dot on"|class="pill on"/)
-    expect(stale).toContain('<b>0<small> of 1</small></b>')
+    expect(stale).not.toMatch(/class="queue"|class="metric hot"|class="dot on"|class="pill on"/)
+    expect(stale).toContain('<b>0<i> of 1</i></b>')
     expect(stale).toContain('<dt>Waiting on a person</dt><dd><b>—</b><span>no current report</span>')
     expect(stale).toContain('<dt>Sessions</dt><dd><b>—</b><span>no current report</span>')
-    expect(stale).toContain('<li class="quiet">')
+    expect(stale).toContain('<tr class="r quiet">')
     expect(stale).toContain('<small>not current</small>')
     expect(stale).toContain('quiet, not counted')
+    // A quiet machine's row is not a waiting row or a live row, whatever it last said.
+    expect(select(team, parseView('filter=waiting')).rows).toHaveLength(0)
+    expect(select(team, parseView('filter=live')).rows).toHaveLength(0)
+    expect(waitingRows(team)).toHaveLength(0)
     const silent = renderTeam(buildTeam([stored('a', 'Dana', 1, [repo()]), stored('c', 'Sam', 60 * 30, [repo({ name: 'old', remote: null })])], NOW), 'owner', 't')
     expect(silent).toContain('silent for over a day, rows hidden')
-    expect(silent).not.toContain('<h3>old</h3>')
+    expect(silent).not.toContain('<b>old</b>')
   })
 
   it('keeps unknown apart from zero, and adds up only what was reported', () => {
-    const page = renderTeam(buildTeam([stored('a', 'Dana', 1, [repo({ setup: null, unread: null, needs_you: 2, waiting_since: null }), repo({ name: 'docs', remote: null, unread: 0, needs_you: 0, waiting_since: null, setup: { score: 100, fail: 0, warn: 0 } })])], NOW), 'owner', 't')
+    const page = renderTeam(buildTeam([stored('a', 'Dana', 1, [repo({ setup: null, unread: null, needs_you: 2, waiting_since: null }), repo({ name: 'docs', remote: null, unread: 0, needs_you: 0, waiting_since: null, abandoned: 3, setup: { score: 100, fail: 0, warn: 0 } })])], NOW), 'owner', 't')
     expect(page).toContain('<small>not checked</small>')
     expect(page).toContain('<small>no inbox</small>')
     expect(page).toContain('none unread')
-    expect(page).toContain('<small>how long was not reported</small>')
-    expect(page).toContain('2 sessions are waiting on a person</h2><p>Answer each one in the session where it is running.</p>')
-    expect(page).not.toContain('longest wait</span>')
-    expect(page).toContain('<dt>Setup items to fix</dt><dd><b>0</b><span>across 1 setup check</span>')
+    expect(page).toContain('<b class="amber">2 waiting</b><small>how long was not reported</small>')
+    expect(page).toContain('<small>2 waiting sessions</small>')
+    expect(page).toContain('<b aria-hidden="true">—</b><small>how long was not reported</small>')
+    expect(page).toContain('<small>1 live · 3 abandoned</small>')
+    expect(page).toContain('<dt>Setup items to fix</dt><dd><b>0</b><span>in 1 setup check</span>')
+    expect(page).toContain('<small>all good</small>')
+    expect(page).toContain('1 check has nothing to fix or look at.')
     const unchecked = renderTeam(buildTeam([stored('a', 'Dana', 1, [repo({ setup: null })])], NOW), 'owner', 't')
     expect(unchecked).toContain('<dt>Setup items to fix</dt><dd><b>—</b><span>no setup check reported</span>')
   })
 
-  it('names the longest wait across repositories and machines, and counts the rest', () => {
-    const page = renderTeam(buildTeam([stored('dana-laptop', 'Dana', 1, [repo(), repo({ name: 'docs', remote: null, live: 0 })]), stored('lee-desktop', 'Lee', 2, [repo({ needs_you: 2, waiting_since: '2026-11-19T09:00:00Z' })])], NOW), 'owner', 't')
-    expect(page).toContain('Needs attention · 4 waiting sessions')
-    expect(page).toContain('Lee on lee-desktop. Answer in the session on that machine. 2 more waiting, listed below.')
-    expect(page).toContain('<b>3 hours</b><span>longest wait</span>')
-    expect(page).toContain('<span>in 2 repositories</span>')
-    expect(page).toContain('<dt>Sessions</dt><dd><b>6</b><span>2 live</span>')
-    expect(page.indexOf('<h3>shop</h3>')).toBeLessThan(page.indexOf('<h3>docs</h3>'))
-    expect(page).toContain('Dana · 2 repositories shown')
-    expect(page).toContain('href="#repositories"')
-    expect(page).toContain('id="machines"')
-    expect(page).toContain('id="setup"')
+  it('reads the view from the address, and nothing else', () => {
+    expect(parseView(undefined)).toEqual(DEFAULT_VIEW)
+    expect(parseView('group=machine&filter=live&sort=setup&q=%20Shop%20')).toEqual({ group: 'machine', filter: 'live', sort: 'setup', q: 'shop' })
+    expect(parseView('group=<script>&filter=drop&sort=1&extra=x')).toEqual(DEFAULT_VIEW)
+    expect(parseView(`q=${'x'.repeat(500)}`).q).toHaveLength(100)
+    expect(viewHref(DEFAULT_VIEW)).toBe('/#reports')
+    expect(viewHref(DEFAULT_VIEW, { group: 'machine', q: 'a b&c' })).toBe('?group=machine&q=a+b%26c#reports')
+    post(JSON.stringify(report([repo(), repo({ name: 'docs', remote: null, needs_you: 0, waiting_since: null })])))
+    const get = (query: string) => handle({ method: 'GET', path: '/', query, cookie: `jq_deck=${viewer}`, body: '' }, ctx).body
+    expect(get('').match(/<tr class="r"/g)).toHaveLength(2)
+    expect(get('q=docs').match(/<tr class="r"/g)).toHaveLength(1)
+    expect(get('q=nothing-like-it')).toContain('No report matches.')
+    // What is typed into the search comes back only as escaped text.
+    const hostile = get(`q=${encodeURIComponent('"><img src=x onerror=1>')}`)
+    expect(hostile).not.toContain('<img')
+    expect(hostile).toContain('value="&quot;&gt;&lt;img src=x onerror=1&gt;"')
+    // The view never reaches the JSON, and never widens what a viewer may see.
+    const api = handle({ method: 'GET', path: '/api/team', query: 'filter=fix', authorization: `Bearer ${viewer}`, body: '' }, ctx)
+    expect(JSON.parse(api.body).groups).toHaveLength(2)
+    const narrow = addViewer(dir, 'contractor', ['docs'])
+    const scoped = handle({ method: 'GET', path: '/', query: 'q=shop&group=machine', cookie: `jq_deck=${narrow}`, body: '' }, ctx).body
+    expect(scoped).not.toContain('github.com/acme/shop')
+    expect(scoped).toContain('No report matches.')
+  })
+
+  it('searches, filters and sorts the same rows, and stays readable with many', () => {
+    const many = Array.from({ length: 12 }, (_, m) => stored(`box-${String(m).padStart(2, '0')}`, `Person ${m}`, 1, Array.from({ length: 5 }, (_, i) => repo({ name: `svc-${m}-${i}`, remote: `github.com/acme/svc-${i}`, live: i % 2, needs_you: m === 3 && i === 2 ? 1 : 0, waiting_since: m === 3 && i === 2 ? '2026-11-19T11:00:00Z' : null, setup: i === 4 ? null : { score: 50 + i * 10 + m, fail: i === 0 ? 1 : 0, warn: 0 } }))))
+    const team = buildTeam(many, NOW)
+    const all = select(team, DEFAULT_VIEW)
+    expect(all.total).toBe(60)
+    expect(all.counts).toEqual({ all: 60, waiting: 1, live: 24, fix: 12 })
+    expect(all.sections).toHaveLength(5)
+    expect(all.rows[0]).toMatchObject({ name: 'svc-3-2', machine: 'box-03' })
+    expect(select(team, parseView('group=machine')).sections).toHaveLength(12)
+    expect(select(team, parseView('group=machine&q=box-07')).rows.map((r) => r.machine)).toEqual(Array(5).fill('box-07'))
+    expect(select(team, parseView('q=box-07')).counts).toEqual({ all: 5, waiting: 0, live: 2, fix: 1 })
+    expect(select(team, parseView('sort=machine')).rows[0].machine).toBe('box-00')
+    const bySetup = select(team, parseView('sort=setup')).rows
+    expect(bySetup[0].setup?.score).toBe(50)
+    // A folder with no setup check is last when sorting by score, never first.
+    expect(bySetup[bySetup.length - 1].setup).toBeNull()
+    // Every row appears once under either grouping.
+    for (const group of ['repo', 'machine'] as const) expect(select(team, { ...DEFAULT_VIEW, group }).sections.reduce((n, s) => n + s.rows.length, 0)).toBe(60)
+    const page = renderTeam(team, 'owner', 't', parseView('group=machine'))
+    expect(page.match(/<tr class="r"/g)).toHaveLength(60)
+    expect(page.match(/<thead>/g)).toHaveLength(1)
+    expect(page.match(/Answer on this machine/g)).toHaveLength(1)
   })
 
   it('works over a real socket, with its headers and its size limit', async () => {
