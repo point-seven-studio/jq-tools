@@ -7,6 +7,7 @@ import { TOOLBAR_CSS } from './presence.js'
 import { deriveAttention, type AgentStatusRow } from './agent-status.js'
 import type { Snapshot } from './collect.js'
 import { ruleText, type TurnCheckConfig, type TurnEvidence } from './turn-check.js'
+import { questionsOption } from './questions.js'
 
 const esc = (s: unknown) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string)
@@ -66,14 +67,34 @@ export interface Manage {
   /** A value this server process made up. A form must send it back. */
   token: string
   config: TurnCheckConfig
+  /** Folders whose question text was turned on from this page. Absent on a caller that predates the button. */
+  questions?: string[]
 }
 
 const hidden = (fields: Record<string, string>) =>
   Object.entries(fields)
     .map(([name, value]) => `<input type="hidden" name="${name}" value="${esc(value)}">`)
     .join('')
-const form = (m: Manage, fields: Record<string, string>, label: string) =>
-  `<form method="post" action="/turn-check">${hidden({ token: m.token, ...fields })}<button type="submit">${esc(label)}</button></form>`
+const form = (m: Manage, fields: Record<string, string>, label: string, action = '/turn-check') =>
+  `<form method="post" action="${action}">${hidden({ token: m.token, ...fields })}<button type="submit">${esc(label)}</button></form>`
+
+/**
+ * A waiting row whose folder has question text off. It says what is missing and how to turn
+ * it on: a button where the page can save the choice, and always the option to add to the
+ * command, for a page that has no button (inside JQ Deck, --no-manage, a saved file).
+ * The option is one click to select: the page runs no script, so it cannot copy for you.
+ */
+function questionOff(tree: string, manage?: Manage): string {
+  const option = `<code class="copy">${esc(questionsOption(tree))}</code>`
+  return (
+    '<div class="q off"><p class="mut">Question text is off for this folder: the page shows that a session is waiting, and not what it asked.</p>' +
+    (manage
+      ? `<div class="acts">${form(manage, { action: 'show', tree }, 'Show question text for this folder', '/questions')}</div>` +
+        `<p class="mut">It is shown on this page only, and saved in <code>~/.jq/config.json</code>. Or add ${option} to the command that started this page.</p>`
+      : `<p class="mut">To turn it on, add ${option} to the command that started this page, or add the folder under <code>"questions"</code> in <code>~/.jq/config.json</code>.</p>`) +
+    '</div>'
+  )
+}
 
 /** Why a row is labelled, and the ways to say the label is wrong. Local page only. */
 function whyPanel(r: AgentStatusRow, evidence: TurnEvidence, m: Manage): string {
@@ -117,7 +138,7 @@ function sessionRow(r: AgentStatusRow, now: number, evidence?: TurnEvidence, man
   const question = r.blocked_question
     ? `<pre>${esc(r.blocked_question)}${r.question_redacted ? '\n[a secret-shaped string was removed]' : ''}</pre>`
     : attention !== 'none' && !r.question_allowed
-      ? '<p class="mut q">Question text is off for this tree.</p>'
+      ? questionOff(r.working_tree, manage)
       : ''
   const why = check && evidence && manage ? whyPanel(r, evidence, manage) : ''
   return `<li><span class="s ${r.state}">${r.state}</span> <span class="mut">${esc(r.branch || 'no branch')} · active ${ago(r.last_activity_at, now)} ago</span> ${[badge, check].filter(Boolean).join('<span class="mut"> · </span>')} ${res}${question}${why}</li>`
@@ -140,6 +161,17 @@ function correctionsPanel(snap: Snapshot, m: Manage): string {
       ? `<ul>${items.join('')}</ul>`
       : '<p class="mut pad">None yet. A label you think is wrong has a "Why, and is it wrong?" link under it.</p>') +
     '<p class="mut pad">Saved in <code>~/.jq/config.json</code> on this machine. Apart from its own running note in <code>~/.jq/running/</code>, this is the only file JQ Agents writes.</p></section>'
+  )
+}
+
+/** The folders turned on from this page, each with a way to turn it off again. Nothing when there are none. */
+function questionsPanel(m: Manage): string {
+  const saved = m.questions ?? []
+  if (saved.length === 0) return ''
+  return (
+    '<section class="card fix"><h2>Question text is shown for</h2><ul>' +
+    saved.map((tree) => `<li><span class="mut">${esc(tree)}</span>${form(m, { action: 'hide', tree }, 'Stop showing it', '/questions')}</li>`).join('') +
+    '</ul><p class="mut pad">On this page only. A folder turned on with <code>--questions</code> when the page was started is not listed here, and stays on until the page is started without it.</p></section>'
   )
 }
 
@@ -171,6 +203,7 @@ ul{list-style:none;margin:0;padding:0}li{border-top:1px solid var(--line);paddin
 .chip{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px}
 .why{margin:6px 0 2px;font-size:13px}.why summary{cursor:pointer;color:var(--mut);font-size:12px}.why p{margin:6px 0}
 code{font:12px ui-monospace,Menlo,monospace;background:var(--well);border-radius:4px;padding:1px 4px;word-break:break-all}
+code.copy{user-select:all;-webkit-user-select:all;cursor:copy}.q.off p{margin:4px 0}
 .cmds{border:1px solid var(--line);border-radius:8px}.cmds li,.fix li{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between}
 .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}form{margin:0}
 button{font:600 12px system-ui,sans-serif;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 10px;min-height:30px;cursor:pointer}
@@ -182,6 +215,6 @@ ${bar ? TOOLBAR_CSS : ''}</style></head><body><main>
 <div class="tot"><div><b>${t.needs_you}</b><span class="mut">waiting on a person</span></div><div><b>${t.abandoned}</b><span class="mut">asked, then left</span></div><div><b>${t.live}</b><span class="mut">live</span></div><div><b>${t.sessions}</b><span class="mut">sessions in ${t.trees} ${t.trees === 1 ? 'tree' : 'trees'}</span></div></div>
 ${chip}
 ${trees || '<p class="mut">No session has been active in the window read.</p>'}
-${manage ? correctionsPanel(snap, manage) : ''}
+${manage ? questionsPanel(manage) : ''}${manage ? correctionsPanel(snap, manage) : ''}
 </main>${bar}</body></html>`
 }

@@ -44,6 +44,9 @@ Sessions are grouped by working tree (the git repository a session is in), becau
   ```
 
   The text is cut to 400 characters and strings shaped like secrets are removed. That removal is a pattern list, so it can miss one: only turn this on for folders where you would be content to read the session's last message on this screen.
+  From 0.1.7 the page says how, on each waiting row whose folder is off. There is a **Show question text for this folder** button, which saves the folder under `questions` in `~/.jq/config.json` (the key JQ Deck reads too), and a list of what you turned on, each with a way to turn it off. Beside the button is the option to add to your command instead, written out for that folder; click it once to select it.
+
+  A folder turned on from the page applies to **the page only**. `--watch --exec` and `--json` hand a snapshot to something else, and for those only `--questions` counts. A click on a page never changes what a relay sends.
 - **Nothing leaves your machine** unless you pass one of two flags:
   - `--probe` times a TLS handshake to `api.anthropic.com` so the bottleneck line can name the network. Nothing is sent.
   - `--watch --exec CMD` hands each snapshot to a command of yours (below).
@@ -103,7 +106,7 @@ On the board, a labelled row has a **Why, and is it wrong?** link. It shows the 
 
 Everything you have corrected is listed at the bottom of the board, each with a button to take it back.
 
-Corrections are saved under the `turnCheck` key of `~/.jq/config.json` (or `--config FILE`). It is the only file of yours JQ Agents changes (the other is its own running note, under Links to the other tools), and other keys in it are left as they were. A save is accepted only from the page this process served: the request must name this server, come from this server's own page, and carry a token made when the process started. `--no-manage` serves the board with no forms at all. `--html`, `--json` and `--exec` never include the forms or the command text.
+Corrections are saved under the `turnCheck` key of `~/.jq/config.json` (or `--config FILE`), and folders turned on from the page under its `questions` key. It is the only file of yours JQ Agents changes (the other is its own running note, under Links to the other tools), and other keys in it are left as they were. A save is accepted only from the page this process served: the request must name this server, come from this server's own page, and carry a token made when the process started. `--no-manage` serves the board with no forms at all. `--html`, `--json` and `--exec` never include the forms or the command text.
 
 ### Limits
 
