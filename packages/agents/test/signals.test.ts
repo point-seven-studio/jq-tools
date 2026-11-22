@@ -213,6 +213,31 @@ describe('the page', () => {
     expect(html).not.toContain('0ms')
   })
 
+  it('starts every area closed, with its figure and a picture in the part that shows', () => {
+    const html = page([prompt(0), reply('m1', 1, {}, [use('t1')]), result('t1', 2, {}, true), reply('m2', 4, {}, undefined, 'end_turn')])
+    expect(html.match(/<details class="card" id="[a-z]+">/g)).toHaveLength(8)
+    expect(html).not.toMatch(/<details class="card" id="[a-z]+" open/)
+    const summary = (key: string) => (html.match(new RegExp(`id="${key}"><summary>(.*?)</summary>`, 's')) as RegExpMatchArray)[1]
+    expect(summary('traces')).toContain('<b>2</b><span>requests to the model, the last 7 days</span>')
+    expect(summary('traces')).toContain('<svg class="spark"')
+    expect(summary('latency')).toContain('<b>4m 0s</b>')
+    expect(summary('errors')).toContain('100% of tool calls failed')
+    expect(summary('drift')).toContain('model-a 100%')
+    expect(summary('feedback')).toContain('of 1 message')
+  })
+
+  it('opens every area when asked, and keeps the choice on the window links', () => {
+    const open = renderSignals({ signals: summarize([run([reply('m1', 1)])], NOW, 7), files: 1, bytesRead: 0, tookMs: 0 }, NOW, '', true)
+    expect(open.match(/<details class="card" id="[a-z]+" open>/g)).toHaveLength(8)
+    expect(open).toContain('href="/signals?days=30&open=all"')
+    expect(open).toContain('<a href="/signals?days=7">Close all</a>')
+    expect(page([reply('m1', 1)])).toContain('<a href="/signals?days=7&open=all">Open all</a>')
+  })
+
+  it('draws no day picture for a window of one day', () => {
+    expect(page([reply('m1', 1)], 1)).not.toContain('<svg')
+  })
+
   it('says the cost is an estimate and not a bill', () => {
     expect(page([reply('m1', 1)])).toContain('On a subscription it is not what you pay.')
   })
