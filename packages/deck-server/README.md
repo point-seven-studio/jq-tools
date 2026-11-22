@@ -50,6 +50,8 @@ jq-deck --watch --repos shop,api --exec "jq-deck-server send --url https://deck.
 
 `--repos` is required: it is the list of repositories that machine agrees to report. `--all-repos` reports every repository with a session.
 
+`--url` takes the server's address, and the report goes to `/report` there. When the board is mounted inside another server under a path, give the full address ending in `/report` and it is used as written.
+
 A viewer opens the server's address and pastes their token into the sign-in page.
 
 ### As a container
