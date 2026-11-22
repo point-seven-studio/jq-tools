@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import os from 'os'
 import path from 'path'
-import { findRestrictedCommands, type MemoryFile, type RestrictedCommand, type SettingsFile, type SetupFacts } from './groundcrew-core.js'
+import { findRestrictedCommands, findUnattendedRuns, packageOf, type McpPackage, type MemoryFile, type RestrictedCommand, type SettingsFile, type SetupFacts } from './groundcrew-core.js'
 
 const SECRET_NAMES = /^(\.env(\..+)?|secrets?(\..+)?|credentials(\..+)?|.*\.pem|id_rsa)$/i
 const NOT_SECRET = /\.(example|sample|template)$/i
@@ -46,6 +46,27 @@ function readJson(file: string): Record<string, any> | null {
 }
 
 /** Count files under a directory that pass a test, descending into subdirectories. */
+/** Names of the plain files directly in a folder that pass the test. Empty when the folder cannot be read. */
+function listFiles(dir: string, test: (name: string) => boolean): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && test(e.name))
+      .map((e) => e.name)
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+/** A file's text, or null when it cannot be read or is over 512 KB. */
+function readText(file: string): string | null {
+  try {
+    return statSync(file).size > 512 * 1024 ? null : readFileSync(file, 'utf-8')
+  } catch {
+    return null
+  }
+}
+
 function countFiles(dir: string, test: (name: string) => boolean): number {
   if (!existsSync(dir)) return 0
   let total = 0
@@ -174,13 +195,35 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
     settingsFile('user', path.join(configDir(), 'settings.json')),
   ].filter((file): file is SettingsFile => file !== null)
 
-  // MCP servers: names are counted, nothing else of these files is used. ~/.claude.json also
+  // MCP servers: names are counted, and the package each is fetched as is read. ~/.claude.json also
   // holds account data, so only the two server maps are touched.
   const projectMcp = readJson(path.join(project, '.mcp.json'))
   const userConfig = readJson(path.join(home(), '.claude.json'))
   const userServers = Object.keys(userConfig?.mcpServers || {}).length + Object.keys(userConfig?.projects?.[project]?.mcpServers || {}).length
   if (projectMcp) filesRead.push('.mcp.json')
-  if (userConfig) filesRead.push('~/.claude.json (MCP server names only)')
+  if (userConfig) filesRead.push('~/.claude.json (MCP server names and the package each is fetched as)')
+  // Of each server entry, only its name and the package a runner fetches it as are kept. The
+  // other arguments and every environment value are never copied: either can hold a key.
+  const fetched = (servers: unknown, scope: 'project' | 'user'): McpPackage[] =>
+    Object.entries(servers && typeof servers === 'object' ? (servers as Record<string, any>) : {}).flatMap(([name, entry]) => {
+      if (!entry || typeof entry.command !== 'string') return []
+      const found = packageOf(entry.command, Array.isArray(entry.args) ? entry.args.filter((a: unknown): a is string => typeof a === 'string') : [])
+      return found ? [{ name, scope, ...found }] : []
+    })
+  const mcpPackages = [...fetched(projectMcp?.mcpServers, 'project'), ...fetched(userConfig?.mcpServers, 'user'), ...fetched(userConfig?.projects?.[project]?.mcpServers, 'user')]
+
+  // Where a run with no person present is started. Each file is read for two patterns and only
+  // the file and line of a match are kept.
+  const runFiles = [
+    ...listFiles(path.join(project, '.github', 'workflows'), (n) => /\.ya?ml$/.test(n)).map((n) => `.github/workflows/${n}`),
+    ...['package.json', 'Makefile', 'justfile'].filter((n) => existsSync(path.join(project, n))),
+    ...['', 'scripts', 'bin', '.claude/scripts'].flatMap((dir) => listFiles(path.join(project, dir), (n) => /\.(sh|bash|zsh)$/.test(n)).map((n) => (dir ? `${dir}/${n}` : n))),
+  ].slice(0, 300)
+  const unattendedRuns = runFiles.flatMap((rel) => {
+    const text = readText(path.join(project, rel))
+    return text === null ? [] : findUnattendedRuns(rel, text)
+  })
+  if (runFiles.length) filesRead.push(`${runFiles.length} workflow, package-script and shell-script ${runFiles.length === 1 ? 'file' : 'files'} (for claude -p and the GitHub action)`)
 
   const encoded = project.replace(/[^a-zA-Z0-9]/g, '-')
   return {
@@ -204,6 +247,8 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
       mcpServers: { project: Object.keys(projectMcp?.mcpServers || {}).length, user: userServers },
       secretFiles: findSecretFiles(project, '', 0).sort(),
       restricted,
+      mcpPackages,
+      unattendedRuns,
     },
   }
 }

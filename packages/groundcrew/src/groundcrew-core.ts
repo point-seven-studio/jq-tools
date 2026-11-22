@@ -67,6 +67,36 @@ export interface SetupFacts {
   secretFiles: string[]
   /** Commands the instruction files say never to run, or to ask about first. Absent when a caller did not look. */
   restricted?: RestrictedCommand[]
+  /**
+   * MCP servers that are fetched by a package runner each time they start. Only the server's
+   * name and the package it names: no other argument and no environment value is kept, because
+   * those can hold a key. Absent when a caller did not look.
+   */
+  mcpPackages?: McpPackage[]
+  /**
+   * Places a run with no person present is started: `claude -p` in a workflow, a package
+   * script or a shell script, or the GitHub action. File and line only. Absent when a caller
+   * did not look.
+   */
+  unattendedRuns?: UnattendedRun[]
+}
+
+export interface UnattendedRun {
+  /** Path from the project root. */
+  file: string
+  line: number
+  kind: 'cli' | 'action'
+  /** True when the run sets --max-turns or --max-budget-usd. */
+  limited: boolean
+}
+
+export interface McpPackage {
+  name: string
+  scope: 'project' | 'user'
+  /** The package as written, such as "some-mcp", "some-mcp@latest" or "@acme/tools@1.4.2". */
+  spec: string
+  /** True when `spec` names one exact version. */
+  pinned: boolean
 }
 
 export interface RestrictedCommand {
@@ -84,6 +114,13 @@ export interface Check {
   group: Group
   /** Which layer of the harness the check is about. Set by runChecks from LAYER_OF. */
   layer: Layer
+  /**
+   * Entries on the OWASP Top 10 for LLM Applications 2025 that the check bears on, written as
+   * OWASP writes them, such as "LLM06:2025 Excessive Agency". Empty for most checks. Set by
+   * runChecks from RISK_OF. A pass is not protection from the risk: see RISK_NOTE. Optional so
+   * a Check built by a caller, or read from an older report, still fits.
+   */
+  risks?: string[]
   title: string
   status: Status
   /** What was found. */
@@ -510,7 +547,113 @@ function guardrailChecks(facts: SetupFacts): Unprompted[] {
   return checks
 }
 
-type Unprompted = Omit<Check, 'prompt' | 'layer'>
+type Unprompted = Omit<Check, 'prompt' | 'layer' | 'risks'>
+
+const LIMIT_FLAG = /--max-turns\b|--max-budget-usd\b/
+const HEADLESS = /(^|[\s;&|("'`$])claude(\s+[^\n|;&]*?)?\s(-p|--print)(\s|=|$)/
+const ACTION = /\buses:\s*['"]?anthropics\/claude-code-action\b/
+
+/**
+ * Runs with no person present in one file's text, and whether each sets a limit. A shell
+ * command continued with a backslash is read as one line. For the GitHub action, the limit is
+ * looked for in the lines of the same step, where `claude_args` carries it.
+ */
+export function findUnattendedRuns(file: string, text: string): UnattendedRun[] {
+  const lines = text.split('\n')
+  const out: UnattendedRun[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const first = lines[i]
+    if (/^\s*(#|\/\/)/.test(first)) continue
+    if (ACTION.test(first)) {
+      // The step ends at the next list item at the same or a shallower indent.
+      const indent = first.search(/\S/)
+      let step = ''
+      for (let j = i + 1; j < lines.length && j <= i + 40; j++) {
+        if (/^\s*-\s/.test(lines[j]) && lines[j].search(/\S/) <= indent) break
+        step += lines[j] + '\n'
+      }
+      out.push({ file, line: i + 1, kind: 'action', limited: LIMIT_FLAG.test(step) })
+      continue
+    }
+    let command = first
+    let end = i
+    while (/\\\s*$/.test(lines[end]) && end + 1 < lines.length) command += ' ' + lines[++end]
+    if (HEADLESS.test(command)) out.push({ file, line: i + 1, kind: 'cli', limited: LIMIT_FLAG.test(command) })
+    i = end
+  }
+  return out
+}
+
+/** Runners that fetch a package and run it. The value is how many words name the runner. */
+const RUNNERS: Array<{ words: string[]; python: boolean }> = [
+  { words: ['npx'], python: false },
+  { words: ['bunx'], python: false },
+  { words: ['pnpm', 'dlx'], python: false },
+  { words: ['yarn', 'dlx'], python: false },
+  { words: ['uvx'], python: true },
+  { words: ['pipx', 'run'], python: true },
+  { words: ['uv', 'tool', 'run'], python: true },
+]
+/** Flags of those runners that take the next word as their value. */
+const VALUE_FLAGS = new Set(['-p', '--package', '-c', '--call', '--from', '--with', '--python', '--registry', '--cache'])
+
+/**
+ * The package a server is fetched as, and whether it names one exact version. Null when the
+ * server is not started through a package runner, or runs a local path or a git address:
+ * those are not fetched fresh from a registry. Looks at the command's words only, and returns
+ * nothing but the package.
+ */
+export function packageOf(command: string, args: string[]): { spec: string; pinned: boolean } | null {
+  const words = [command.split(/[\\/]/).pop() ?? command, ...args]
+  const runner = RUNNERS.find((r) => r.words.every((w, i) => words[i] === w))
+  if (!runner) return null
+  let spec: string | null = null
+  for (let i = runner.words.length; i < words.length; i++) {
+    const w = words[i]
+    const named = /^(--package|--from)=(.+)$/.exec(w)
+    if (named) {
+      spec = named[2]
+      break
+    }
+    if (w === '-p' || w === '--package' || w === '--from') {
+      spec = words[i + 1] ?? null
+      break
+    }
+    if (VALUE_FLAGS.has(w)) i++
+    else if (!w.startsWith('-')) {
+      spec = w
+      break
+    }
+  }
+  if (!spec || /^(\.|\/|~|file:|git\+|https?:|github:)/.test(spec)) return null
+  const pinned = runner.python ? /^[A-Za-z0-9._-]+(\[[^\]]*\])?(==|@)\d+(\.\d+)*([a-z0-9.+-]*)$/i.test(spec) : /^(@[^/@]+\/)?[^@]+@\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]*)?$/.test(spec)
+  return { spec, pinned }
+}
+
+/**
+ * A server started as `npx some-mcp` is whatever that name points at when the session starts.
+ * A new release, or a taken-over name, then runs on the machine with the reach the agent has.
+ */
+function mcpChecks(facts: SetupFacts): Unprompted[] {
+  const packages = facts.mcpPackages ?? []
+  if (packages.length === 0) return []
+  const loose = packages.filter((p) => !p.pinned)
+  const source = `${DOCS}/mcp.md`
+  const name = (p: McpPackage) => `${p.name} (${p.spec}, ${p.scope})`
+  return [
+    {
+      id: 'mcp-pinned',
+      group: 'guardrails',
+      title: 'Connected tools fetched at start name an exact version',
+      status: loose.length ? 'warn' : 'pass',
+      detail: loose.length
+        ? `${plural(loose.length, 'MCP server')} of ${packages.length} fetched by a package runner ${loose.length === 1 ? 'names' : 'name'} no exact version: ${loose.map(name).join('; ')}. Each start runs whatever that name points to that day, with the reach your agent has.`
+        : `All ${plural(packages.length, 'MCP server')} fetched by a package runner name an exact version.`,
+      fix: loose.length ? 'Our suggestion: write the exact version, as in some-mcp@1.4.2 (or some-mcp==1.4.2 for a Python tool), and change it on purpose when you want a newer one. The docs do not ask for this.' : '',
+      source,
+    },
+  ]
+}
 
 /** A command that tests, lints, type-checks or builds: something the agent can run to check a change. */
 export function looksLikeACheck(command: string): boolean {
@@ -555,6 +698,27 @@ function verificationChecks(facts: SetupFacts): Unprompted[] {
       source: `${DOCS}/hooks.md`,
     },
   ]
+  const runs = facts.unattendedRuns
+  if (runs) {
+    const open = runs.filter((r) => !r.limited)
+    const where = (r: UnattendedRun) => `${r.file}:${r.line}`
+    checks.push({
+      id: 'run-limits',
+      group: 'verification',
+      title: 'A run with no person present has a limit',
+      status: runs.length === 0 ? 'info' : open.length ? 'warn' : 'pass',
+      detail:
+        runs.length === 0
+          ? 'No run with no person present was found. This looked for claude -p and the GitHub action in workflows, package scripts and shell scripts.'
+          : open.length
+            ? `${open.length} of ${plural(runs.length, 'run')} with no person present ${open.length === 1 ? 'sets' : 'set'} no turn or spending limit: ${open.slice(0, 8).map(where).join(', ')}${open.length > 8 ? `, and ${open.length - 8} more` : ''}. The docs say of --max-turns: "No limit by default." Nobody is there to stop a run that goes round in circles.`
+            : `All ${plural(runs.length, 'run')} with no person present set a turn or spending limit.`,
+      fix: open.length
+        ? 'Add --max-turns with a number, or --max-budget-usd with an amount, to each. In the GitHub action they go in claude_args. The docs say the spending limit is checked against Claude Code\'s own estimate and that "Spend can pass the cap", so set it below what you can afford.'
+        : '',
+      source: `${DOCS}/cli-reference.md`,
+    })
+  }
   if (facts.subagentFiles.length) {
     checks.push({
       id: 'subagent-scope',
@@ -592,6 +756,23 @@ export function promptFor(check: Unprompted, facts: SetupFacts): string {
   switch (id) {
     case 'memory-exists':
       return '/init'
+    case 'run-limits': {
+      const open = (facts.unattendedRuns ?? []).filter((r) => !r.limited)
+      return (
+        `These start Claude Code with no person present and set no limit: ${open.slice(0, 12).map((r) => `${r.file}:${r.line}`).join(', ')}. ` +
+        'The Claude Code docs say --max-turns has no limit by default, and that --max-budget-usd stops a run once estimated spend reaches an amount. ' +
+        'For each one, read what the run is for and propose a --max-turns value, and a --max-budget-usd value where money is the worry. In the GitHub action they go in claude_args. ' +
+        'Tell me the numbers and why before you edit anything, then show me the diff.'
+      )
+    }
+    case 'mcp-pinned': {
+      const loose = (facts.mcpPackages ?? []).filter((p) => !p.pinned)
+      return (
+        `These MCP servers are started through a package runner with no exact version: ${loose.map((p) => `${p.name} (${p.spec}, ${p.scope} scope)`).join('; ')}. ` +
+        'For each one, find which file defines it (.mcp.json for project scope, ~/.claude.json for user scope) and which version of the package is in use now. ' +
+        'Then show me the change that writes that exact version into the server entry. Do not change any other argument, and do not print any environment value. Show me the diff before you save anything.'
+      )
+    }
     case 'memory-length': {
       const file = facts.memory.find((m) => m.label === label)
       return (
@@ -664,6 +845,7 @@ export const LAYER_OF: Readonly<Record<string, Layer>> = {
   hooks: 'sensors',
   'verify-command': 'sensors',
   'stop-check': 'loop',
+  'run-limits': 'loop',
   'auto-memory-index': 'memory',
   'allow-rules': 'permissions',
   'subagents-and-mcp': 'permissions',
@@ -676,6 +858,54 @@ export const LAYER_OF: Readonly<Record<string, Layer>> = {
   'prose-rules': 'permissions',
   'subagent-scope': 'permissions',
   retention: 'observability',
+  'mcp-pinned': 'permissions',
+}
+
+/**
+ * The OWASP Top 10 for LLM Applications 2025, by number. Names are copied from the project's
+ * own files (github.com/OWASP/www-project-top-10-for-large-language-model-applications,
+ * folder 2_0_vulns), read 2026-11-22. Do not add an entry from memory or from a summary of
+ * the list: a widely shared graphic had seven of its nine numbers wrong.
+ */
+export const OWASP_LLM_2025 = {
+  LLM01: 'Prompt Injection',
+  LLM02: 'Sensitive Information Disclosure',
+  LLM03: 'Supply Chain',
+  LLM04: 'Data and Model Poisoning',
+  LLM05: 'Improper Output Handling',
+  LLM06: 'Excessive Agency',
+  LLM07: 'System Prompt Leakage',
+  LLM08: 'Vector and Embedding Weaknesses',
+  LLM09: 'Misinformation',
+  LLM10: 'Unbounded Consumption',
+} as const
+export type OwaspLlmId = keyof typeof OWASP_LLM_2025
+
+/** "LLM06:2025 Excessive Agency": the form OWASP itself uses. */
+export const owaspLabel = (id: OwaspLlmId): string => `${id}:2025 ${OWASP_LLM_2025[id]}`
+
+/** Said wherever a risk is named, so a tag is not read as a claim of coverage. */
+export const RISK_NOTE =
+  'A tag names an entry on the OWASP Top 10 for LLM Applications 2025 that the check bears on. It is our own reading, not OWASP\'s. A pass means this one setting is in place. It does not mean the project is protected from that risk.'
+
+/**
+ * Which entries a check bears on, by the part of its id before any colon. Only where the link
+ * is plain: a check with no line here carries no tag.
+ */
+export const RISK_OF: Readonly<Record<string, readonly OwaspLlmId[]>> = {
+  'deny-secrets': ['LLM02'],
+  'broad-allow': ['LLM06'],
+  'default-mode': ['LLM06'],
+  sandbox: ['LLM06'],
+  reach: ['LLM06'],
+  'prose-rules': ['LLM06'],
+  'subagent-scope': ['LLM06'],
+  'mcp-pinned': ['LLM03'],
+  'run-limits': ['LLM10'],
+}
+
+export function risksOf(id: string): string[] {
+  return (RISK_OF[id.split(':')[0]] ?? []).map(owaspLabel)
 }
 
 export function layerOf(id: string): Layer {
@@ -704,7 +934,7 @@ export const LAYERS: ReadonlyArray<{ key: Layer; title: string; what: string; un
     key: 'loop',
     title: 'Loop',
     what: 'What sends the agent back when the work is not done.',
-    unchecked: 'It does not look at retry or spending limits for runs with no person present.',
+    unchecked: 'It finds a run with no person present only as claude -p or the GitHub action, in a workflow, a package script or a shell script. It does not see one started by another tool or by a program built on the SDK.',
   },
   {
     key: 'memory',
@@ -727,8 +957,8 @@ export const LAYERS: ReadonlyArray<{ key: Layer; title: string; what: string; un
 ]
 
 export function runChecks(facts: SetupFacts): Check[] {
-  const checks: Unprompted[] = [...memoryChecks(facts), ...automationChecks(facts), ...guardrailChecks(facts), ...proseChecks(facts), ...verificationChecks(facts)]
-  return checks.map((check) => ({ ...check, layer: layerOf(check.id), prompt: promptFor(check, facts) }))
+  const checks: Unprompted[] = [...memoryChecks(facts), ...automationChecks(facts), ...guardrailChecks(facts), ...mcpChecks(facts), ...proseChecks(facts), ...verificationChecks(facts)]
+  return checks.map((check) => ({ ...check, layer: layerOf(check.id), risks: risksOf(check.id), prompt: promptFor(check, facts) }))
 }
 
 export interface LayerSummary {
