@@ -4,6 +4,7 @@
  *   jq-agents                       serve the board at http://127.0.0.1:4319
  *   jq-agents --html FILE           write the board to a file
  *   jq-agents --json                print one snapshot
+ *   jq-agents --signals --json      print the counts the signals page shows
  *   jq-agents --watch --exec CMD    every interval, pipe a snapshot (JSON) to CMD
  *
  * The page server listens on this machine only. Nothing leaves the machine unless
@@ -22,6 +23,8 @@ import { snapshot, type Snapshot } from './collect.js'
 import { defaultConfigFile, readQuestionTrees, readTurnCheckConfig, writeQuestionTrees, writeTurnCheckConfig } from './config.js'
 import { applyQuestionsAction, parseQuestionsAction } from './questions.js'
 import { renderPage } from './page.js'
+import { WINDOWS, renderSignals } from './signals-page.js'
+import { createSignalsReader } from './signals-read.js'
 import { COPY_SCRIPT_CSP, LAMP_PATH, announce, lampReply, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { startUpdateCheck } from './update-check.js'
 import { applyAction, parseAction } from './turn-check.js'
@@ -30,6 +33,9 @@ export const DEFAULT_PORT = 4319
 
 export interface Args {
   json: boolean
+  /** With --json: print the signals counts, not the snapshot. */
+  signals: boolean
+  signalsDays: number
   html: string | null
   watch: boolean
   exec: string | null
@@ -49,6 +55,8 @@ const list = (s: string | undefined) => (s || '').split(',').map((x) => x.trim()
 export function parseArgs(argv: string[], env: Record<string, string | undefined> = {}): Args {
   const a: Args = {
     json: false,
+    signals: false,
+    signalsDays: 7,
     html: null,
     watch: false,
     exec: null,
@@ -70,6 +78,8 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     const f = argv[i]
     if (f === '--json') a.json = true
     else if (f === '--watch') a.watch = true
+    else if (f === '--signals') a.signals = true
+    else if (f === '--days') a.signalsDays = Number(value(i++, f))
     else if (f === '--probe') a.probe = true
     else if (f === '--no-sample') a.sample = false
     else if (f === '--no-manage') a.manage = false
@@ -86,6 +96,8 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
   if (!Number.isInteger(a.port) || a.port < 1 || a.port > 65535) throw new Error('--port needs a number from 1 to 65535')
   if (!(a.intervalS >= 5)) throw new Error('--interval needs 5 seconds or more')
   if (!(a.maxAgeDays > 0)) throw new Error('--max-age-days needs a number above 0')
+  if (!Number.isInteger(a.signalsDays) || a.signalsDays < 1 || a.signalsDays > 90) throw new Error('--days needs a whole number from 1 to 90')
+  if (a.signals && !a.json) throw new Error('--signals goes with --json (the page is at /signals when you run jq-agents)')
   if (a.watch && !a.exec) throw new Error('--watch needs --exec CMD (what should receive each snapshot?)')
   if (a.exec && !a.watch && !a.json) throw new Error('--exec goes with --watch')
   return a
@@ -171,6 +183,10 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
     setInterval(tick, a.intervalS * 1000)
     return
   }
+  if (a.json && a.signals) {
+    console.log(JSON.stringify((await createSignalsReader().read(a.signalsDays)).signals, null, 2))
+    return
+  }
   if (a.json) {
     console.log(JSON.stringify(await collect(a), null, 2))
     return
@@ -193,6 +209,7 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
     'content-security-policy': `default-src 'none'; script-src ${COPY_SCRIPT_CSP}; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
     'x-content-type-options': 'nosniff',
   }
+  const signals = createSignalsReader()
   createServer(async (req, res) => {
     try {
       if (req.method === 'POST' && req.url === '/turn-check' && a.manage) {
@@ -233,6 +250,19 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', allow: 'GET, HEAD' })
         res.end('Method not allowed.')
+        return
+      }
+      const url = new URL(req.url || '/', 'http://127.0.0.1')
+      if (url.pathname === '/signals') {
+        const asked = Number(url.searchParams.get('days'))
+        const result = await signals.read(WINDOWS.includes(asked) ? asked : 7)
+        res.writeHead(200, headers)
+        res.end(renderSignals(result, Date.now(), toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() })))
+        return
+      }
+      if (url.pathname !== '/') {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('Not found.')
         return
       }
       const snap = await collect(a, a.manage, true)

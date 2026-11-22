@@ -8,3 +8,6 @@ export { renderPage, totals, groupByTree, unverified, type Manage, type Totals }
 export { defaultConfigFile, readTurnCheckConfig, writeTurnCheckConfig } from './config.js'
 export { applyQuestionsAction, parseQuestionsAction, questionsOption, type QuestionsAction } from './questions.js'
 export { readQuestionTrees, writeQuestionTrees } from './config.js'
+export { addRecord, summarize, emptyFileState, emptyBucket, spread, dayOf, NOT_MEASURED, type Signals, type FileState, type Bucket, type Tokens, type Spread } from './signals.js'
+export { createSignalsReader, type SignalsReader, type SignalsResult } from './signals-read.js'
+export { renderSignals } from './signals-page.js'
