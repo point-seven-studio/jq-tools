@@ -10,7 +10,7 @@
  * never color alone: each row has an icon and a word. Light and dark follow the system.
  */
 import { TOOLBAR_CSS } from './presence.js'
-import { LAYERS, layerSummary, type Check, type Group, type LayerSummary, type Status, type Summary } from './groundcrew-core.js'
+import { LAYERS, RISK_NOTE, layerSummary, type Check, type Group, type LayerSummary, type Status, type Summary } from './groundcrew-core.js'
 
 export interface Report {
   project: string
@@ -79,6 +79,9 @@ const dot = (status: Status) => `<span class="dot s-${status}" aria-hidden="true
 const sourceLink = (check: Check) =>
   `<a href="${esc(check.source)}" target="_blank" rel="noopener noreferrer">${esc(check.source.replace(/^https:\/\/code\.claude\.com\/docs\/en\//, 'docs: ').replace(/\.md$/, ''))}</a>`
 
+/** " · bears on OWASP LLM06:2025 Excessive Agency", or nothing. `risks` is absent on a report made by an older version. */
+const riskText = (check: Check) => ((check.risks ?? []).length ? ` · bears on OWASP ${(check.risks ?? []).map(esc).join(', ')}` : '')
+
 function fixCard(check: Check): string {
   const status = STATUS[check.status]
   const id = anchor(check)
@@ -90,13 +93,13 @@ function fixCard(check: Check): string {
   return (
     `<section class="check s-${check.status}" id="${id}"><h3>${dot(check.status)}${esc(check.title)}<span class="word">${status.word}</span></h3>` +
     `<p>${esc(check.detail)}</p>${check.fix ? `<p class="fix"><b>What to change:</b> ${esc(check.fix)}</p>` : ''}${prompt}` +
-    `<p class="src mut">Rests on ${sourceLink(check)}</p></section>`
+    `<p class="src mut">Rests on ${sourceLink(check)}${riskText(check)}</p></section>`
   )
 }
 
 const row = (check: Check) =>
   `<li>${dot(check.status)}<b>${esc(check.title)}<span class="mut"> · ${STATUS[check.status].word}</span></b><span class="d">${esc(check.detail)}</span>` +
-  `<span class="src mut">${sourceLink(check)}</span></li>`
+  `<span class="src mut">${sourceLink(check)}${riskText(check)}</span></li>`
 
 const LAYER_DOT: Record<LayerSummary['state'], Status> = { fix: 'fail', look: 'warn', good: 'pass', facts: 'info', none: 'info' }
 
@@ -117,7 +120,8 @@ function layerPanel(checks: Check[]): string {
   })
   return (
     '<h2>Your harness, layer by layer</h2><p class="mut">An agent is a model and what surrounds it. These are six parts of what surrounds it, with what the checks below found in each.</p>' +
-    `<ul class="rows">${rows.join('')}</ul>`
+    `<ul class="rows">${rows.join('')}</ul>` +
+    (checks.some((c) => (c.risks ?? []).length) ? `<p class="mut">${esc(RISK_NOTE)}</p>` : '')
   )
 }
 

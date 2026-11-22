@@ -73,12 +73,14 @@ console.log(summarize(checks))
 - How many folders outside the project the agent can reach.
 - How long session transcripts are kept.
 - From 0.1.6: whether a command your instructions restrict has a permission rule behind it. See below.
+- From 0.1.8: whether an MCP server that a package runner fetches at start (`npx`, `bunx`, `pnpm dlx`, `yarn dlx`, `uvx`, `pipx run`) names one exact version. `npx some-mcp` runs whatever that name points to that day, with the reach your agent has. This one is our suggestion; the docs do not ask for it.
 
 **Verification: who checks the work when the agent says it is done**
 
 - Whether the agent can run a test, lint, type-check or build command without asking.
 - Whether a hook runs when the agent finishes. A Stop hook can send it back to keep working.
 - Whether each subagent is limited to the tools its job needs.
+- From 0.1.8: whether a run with no person present sets a limit. It looks for `claude -p` and the GitHub action in workflows, package scripts and shell scripts, and for `--max-turns` or `--max-budget-usd` on each. The docs say of `--max-turns`: "No limit by default."
 
 Each check links the page of Anthropic's Claude Code documentation it rests on. Advice that is ours, and not the docs', says "our suggestion".
 
@@ -90,12 +92,27 @@ From 0.1.5 the page also sorts the same checks into six layers of an agent's har
 |---|---|---|
 | Guides | What steers the agent before it works | Instruction file length, skills, custom commands |
 | Sensors | What checks the work | Hooks, and whether the agent can run your checks |
-| Loop | What sends the agent back when the work is not done | The Stop hook |
+| Loop | What sends the agent back when the work is not done, and what stops it going round | The Stop hook, and a limit on runs with no person present |
 | Memory | What carries over between sessions | The auto memory index |
 | Permissions | What the agent may and may not do | Secrets, blanket approvals, permission mode, sandbox, reach, subagent tools, rules written in the instructions |
 | Observability | What a person can see of what the agent did | Transcript retention, as a fact |
 
-Each row on the page also says what Groundcrew does **not** check in that layer, so a row of passes is not read as "covered". Loop, memory and observability have one check each. In `--json` the rows are under `layers`, and each check carries its `layer`.
+Each row on the page also says what Groundcrew does **not** check in that layer, so a row of passes is not read as "covered". Memory and observability have one check each. In `--json` the rows are under `layers`, and each check carries its `layer`.
+
+## OWASP tags
+
+From 0.1.8, a check that bears plainly on an entry of the [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/llm-top-10/) names it, on the page and as `risks` in `--json`:
+
+| Entry | Checks |
+|---|---|
+| LLM02:2025 Sensitive Information Disclosure | The deny rule for secret files |
+| LLM03:2025 Supply Chain | MCP servers with no exact version |
+| LLM06:2025 Excessive Agency | Blanket approvals, permission mode, sandbox, reach, rules written in the instructions, subagent tools |
+| LLM10:2025 Unbounded Consumption | A limit on runs with no person present |
+
+The other six entries have no check here. Groundcrew looks at how Claude Code is set up on one project. It does not look at training data, a model, a retrieval store or an application's own prompts.
+
+**A tag is our reading, not OWASP's, and a pass is not protection.** A pass means one setting is in place. This is not a security review and not a certification. The entry names are copied from the OWASP project's own files; a list from memory or from a shared graphic is easy to get wrong.
 
 ## Rules written in the instructions
 
@@ -125,6 +142,8 @@ It reads:
 - the Claude Code settings files (user, project, local and managed);
 - `CLAUDE.md` files, to count their lines;
 - the names of your skills, subagents, commands and MCP servers;
+- for each MCP server, the package a runner fetches it as, and nothing else of its entry: no other argument and no environment value, since either can hold a key;
+- workflow files, `package.json`, `Makefile`, `justfile` and shell scripts in the project root, `scripts/`, `bin/` and `.claude/scripts/`, for two patterns only (`claude -p` and the GitHub action). Only the file and line of a match are kept;
 - the names of files that usually hold secrets, to tell you whether a rule protects them.
 
 It never opens a secrets file. It never reads a session transcript. The page lists every file it read.
@@ -139,7 +158,9 @@ A suggested prompt asks Claude Code to show its plan or its diff before it chang
 
 - It covers Claude Code only.
 - It checks setup. It does not look at how a session went.
-- The checks follow the Claude Code documentation as it stood on 2026-11-14. The documentation can change.
+- The checks follow the Claude Code documentation as it stood on 2026-11-14 (the two checks added in 0.1.8: 2026-11-22). The documentation can change.
+- The limit check finds a run with no person present only where it is written as `claude -p` or the GitHub action. One started by another tool, or by a program built on the SDK, is not seen.
+- The version check knows six package runners. A server run from a container image is not looked at.
 
 ## Links to the other tools
 

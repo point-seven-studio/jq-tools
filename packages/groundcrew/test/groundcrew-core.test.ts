@@ -6,6 +6,7 @@
  */
 import { describe, expect, it, test } from 'vitest'
 import { commandStart, findRestrictedCommands, proseFindings, ruleCovers } from '../src/groundcrew-core.js'
+import { findUnattendedRuns, OWASP_LLM_2025, owaspLabel, packageOf, RISK_NOTE, RISK_OF, risksOf } from '../src/groundcrew-core.js'
 import { allowsEveryCommand, boardSummary, deniesSecrets, LAYER_OF, LAYERS, layerSummary, looksLikeACheck, runChecks, summarize, type SettingsFile, type SetupFacts } from '../src/groundcrew-core.js'
 import { renderPage } from '../src/groundcrew-page.js'
 
@@ -348,5 +349,104 @@ describe('the page', () => {
   test('gives every status a word beside its color', () => {
     for (const word of ['Fix', 'Look']) expect(html).toContain(`<span class="word">${word}</span>`)
     for (const word of ['Good', 'Fact']) expect(html).toContain(`<span class="mut"> · ${word}</span>`)
+  })
+})
+
+describe('OWASP tags', () => {
+  test('every tag is one of the ten entries, under a check that exists', () => {
+    const known = Object.keys(LAYER_OF)
+    for (const [id, tags] of Object.entries(RISK_OF)) {
+      expect(known).toContain(id)
+      for (const tag of tags) expect(Object.keys(OWASP_LLM_2025)).toContain(tag)
+    }
+    expect(Object.keys(OWASP_LLM_2025)).toHaveLength(10)
+    expect(owaspLabel('LLM06')).toBe('LLM06:2025 Excessive Agency')
+    expect(owaspLabel('LLM10')).toBe('LLM10:2025 Unbounded Consumption')
+    expect(owaspLabel('LLM03')).toBe('LLM03:2025 Supply Chain')
+  })
+  test('a check carries its tags, and a check with no plain link carries none', () => {
+    const checks = runChecks(facts({ unattendedRuns: [], mcpPackages: [{ name: 'x', scope: 'project', spec: 'x-mcp', pinned: false }] }))
+    expect(checks.find((c) => c.id === 'deny-secrets')!.risks).toEqual(['LLM02:2025 Sensitive Information Disclosure'])
+    expect(checks.find((c) => c.id === 'mcp-pinned')!.risks).toEqual(['LLM03:2025 Supply Chain'])
+    expect(checks.find((c) => c.id === 'run-limits')!.risks).toEqual(['LLM10:2025 Unbounded Consumption'])
+    expect(checks.find((c) => c.id === 'stop-check')!.risks).toEqual([])
+    expect(risksOf('memory-length:CLAUDE.md')).toEqual([])
+    expect(RISK_NOTE).toContain('does not mean the project is protected')
+  })
+})
+
+describe('packageOf', () => {
+  test('finds the package a runner fetches, and whether it names one exact version', () => {
+    expect(packageOf('npx', ['-y', '@example/mcp-server'])).toEqual({ spec: '@example/mcp-server', pinned: false })
+    expect(packageOf('npx', ['-y', '@example/mcp-server@1.4.2'])).toEqual({ spec: '@example/mcp-server@1.4.2', pinned: true })
+    expect(packageOf('npx', ['some-mcp@latest', '--port', '1'])).toEqual({ spec: 'some-mcp@latest', pinned: false })
+    expect(packageOf('npx', ['some-mcp@^1.2.0'])).toEqual({ spec: 'some-mcp@^1.2.0', pinned: false })
+    expect(packageOf('npx', ['some-mcp@1.2.3-beta.1'])).toEqual({ spec: 'some-mcp@1.2.3-beta.1', pinned: true })
+    expect(packageOf('/usr/local/bin/npx', ['--yes', '--package', 'tool@2.0.0', 'tool-bin'])).toEqual({ spec: 'tool@2.0.0', pinned: true })
+    expect(packageOf('npx', ['--package=tool', 'tool-bin'])).toEqual({ spec: 'tool', pinned: false })
+    expect(packageOf('pnpm', ['dlx', 'some-mcp'])).toEqual({ spec: 'some-mcp', pinned: false })
+    expect(packageOf('bunx', ['some-mcp@3.0.1'])).toEqual({ spec: 'some-mcp@3.0.1', pinned: true })
+    expect(packageOf('uvx', ['mcp-server-git'])).toEqual({ spec: 'mcp-server-git', pinned: false })
+    expect(packageOf('uvx', ['mcp-server-git==2025.1.14'])).toEqual({ spec: 'mcp-server-git==2025.1.14', pinned: true })
+    expect(packageOf('uvx', ['--from', 'mcp-server-git@0.6.2', 'mcp-server-git'])).toEqual({ spec: 'mcp-server-git@0.6.2', pinned: true })
+    expect(packageOf('pipx', ['run', 'some-tool'])).toEqual({ spec: 'some-tool', pinned: false })
+  })
+  test('says nothing of a server that is not fetched from a registry', () => {
+    expect(packageOf('node', ['./server.js'])).toBeNull()
+    expect(packageOf('npx', ['./local-server'])).toBeNull()
+    expect(packageOf('npx', ['-y', 'github:acme/tools'])).toBeNull()
+    expect(packageOf('uvx', ['--from', 'git+https://example.com/x.git', 'x'])).toBeNull()
+    expect(packageOf('docker', ['run', 'acme/server'])).toBeNull()
+    expect(packageOf('pnpm', ['install'])).toBeNull()
+    expect(packageOf('npx', ['-y'])).toBeNull()
+  })
+  test('warns about a server with no exact version, and names no argument but the package', () => {
+    const checks = runChecks(facts({ mcpPackages: [{ name: 'files', scope: 'project', spec: 'files-mcp', pinned: false }, { name: 'git', scope: 'user', spec: 'git-mcp@1.0.0', pinned: true }] }))
+    const check = checks.find((c) => c.id === 'mcp-pinned')!
+    expect(check.status).toBe('warn')
+    expect(check.detail).toContain('1 MCP server of 2 fetched by a package runner names no exact version: files (files-mcp, project).')
+    expect(check.fix).toContain('The docs do not ask for this.')
+    expect(check.prompt).toContain('files (files-mcp, project scope)')
+    expect(check.prompt).toContain('do not print any environment value')
+    expect(check.layer).toBe('permissions')
+    expect(runChecks(facts({ mcpPackages: [{ name: 'git', scope: 'user', spec: 'git-mcp@1.0.0', pinned: true }] })).find((c) => c.id === 'mcp-pinned')!.status).toBe('pass')
+    expect(runChecks(facts({ mcpPackages: [] })).find((c) => c.id === 'mcp-pinned')).toBeUndefined()
+    expect(runChecks(facts()).find((c) => c.id === 'mcp-pinned')).toBeUndefined()
+  })
+})
+
+describe('findUnattendedRuns', () => {
+  test('finds claude -p in a script, reading a continued command as one line', () => {
+    const text = ['#!/bin/sh', '# claude -p "a comment is not a run"', 'claude -p "summarise the diff"', 'claude --print --max-turns 5 "x"', 'cat notes | claude -p \\', '  --max-budget-usd 2 \\', '  "review"', 'claude --version', 'echo "claude is here"', 'npm run claude-plugin -p 3'].join('\n')
+    expect(findUnattendedRuns('scripts/review.sh', text)).toEqual([
+      { file: 'scripts/review.sh', line: 3, kind: 'cli', limited: false },
+      { file: 'scripts/review.sh', line: 4, kind: 'cli', limited: true },
+      { file: 'scripts/review.sh', line: 5, kind: 'cli', limited: true },
+    ])
+  })
+  test('finds a package script, and the GitHub action with its limit in claude_args', () => {
+    expect(findUnattendedRuns('package.json', '{\n  "scripts": {\n    "triage": "claude -p \\"triage\\" --max-turns 3",\n    "notes": "claude -p notes"\n  }\n}')).toEqual([
+      { file: 'package.json', line: 3, kind: 'cli', limited: true },
+      { file: 'package.json', line: 4, kind: 'cli', limited: false },
+    ])
+    const workflow = ['jobs:', '  a:', '    steps:', '      - uses: actions/checkout@v4', '      - uses: anthropics/claude-code-action@v1', '        with:', '          prompt: "review"', '          claude_args: "--max-turns 5"', '      - uses: anthropics/claude-code-action@v1', '        with:', '          prompt: "no limit here"', '      - name: later', '        run: echo --max-turns 9'].join('\n')
+    expect(findUnattendedRuns('.github/workflows/review.yml', workflow)).toEqual([
+      { file: '.github/workflows/review.yml', line: 5, kind: 'action', limited: true },
+      { file: '.github/workflows/review.yml', line: 9, kind: 'action', limited: false },
+    ])
+  })
+  test('warns about a run with no limit, passes when all have one, and only states a fact when there is none', () => {
+    const open = runChecks(facts({ unattendedRuns: [{ file: 'a.sh', line: 3, kind: 'cli', limited: false }, { file: 'b.yml', line: 9, kind: 'action', limited: true }] })).find((c) => c.id === 'run-limits')!
+    expect(open.status).toBe('warn')
+    expect(open.detail).toContain('1 of 2 runs with no person present sets no turn or spending limit: a.sh:3.')
+    expect(open.detail).toContain('"No limit by default."')
+    expect(open.layer).toBe('loop')
+    expect(open.prompt).toContain('a.sh:3')
+    expect(open.prompt).toContain('before you edit anything')
+    expect(runChecks(facts({ unattendedRuns: [{ file: 'b.yml', line: 9, kind: 'action', limited: true }] })).find((c) => c.id === 'run-limits')!.status).toBe('pass')
+    const none = runChecks(facts({ unattendedRuns: [] })).find((c) => c.id === 'run-limits')!
+    expect(none.status).toBe('info')
+    expect(none.prompt).toBe('')
+    expect(runChecks(facts()).find((c) => c.id === 'run-limits')).toBeUndefined()
   })
 })
