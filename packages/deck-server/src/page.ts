@@ -9,7 +9,7 @@
  * Grouping, search, filter and sort are links and one GET form: the choice is
  * in the address (view.ts), so there is still no script to run.
  */
-import { TOOLBAR_CSS, toolbar } from './presence.js'
+import { TOOLBAR_CSS, TOOLS, toolbar } from './presence.js'
 import { duration, type MachineState, type Team, type TeamRow } from './team.js'
 import { allRows, DEFAULT_VIEW, MAX_SEARCH_CHARS, select, viewHref, waitingRows, type Filter, type ReportRow, type Sort, type View } from './view.js'
 
@@ -91,7 +91,7 @@ section{scroll-margin-top:16px}
 .q-main{display:flex;align-items:flex-start;gap:12px;min-width:0}
 .bang{width:30px;height:30px;flex-shrink:0;display:grid;place-items:center;border-radius:9px;border:1px solid var(--warn-line);color:var(--warn);font-weight:800}
 .queue b{font-size:14px;font-weight:730;overflow-wrap:anywhere}
-.queue small{color:var(--sub);overflow-wrap:anywhere}
+.queue small{color:var(--sub);overflow-wrap:anywhere}.queue a,.g a,tr.r small a{color:inherit;text-decoration:underline;text-underline-offset:2px}.queue .q-where a{color:var(--link)}
 .q-age{text-align:right;white-space:nowrap}.q-age b{display:block;font:780 19px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--warn)}
 .note{font-size:12px;color:var(--mut);margin-top:8px}
 .calm,.strip{border:1px solid var(--line);border-radius:11px;background:var(--card);padding:14px 20px;margin-bottom:30px;color:var(--sub)}
@@ -183,6 +183,22 @@ function setupWords(s: NonNullable<TeamRow['setup']>): string {
   return parts.length ? parts.join(' · ') : 'all good'
 }
 
+/**
+ * A remote is host/owner/name, checked when the report arrived (report.ts), so it can be
+ * a link to the repository's own page. It opens in a new tab: this page reloads every minute.
+ */
+const remoteLink = (remote: string) => `<a href="https://${esc(remote)}" target="_blank" rel="noopener noreferrer">${esc(remote)}</a>`
+
+const DECK_PORT = TOOLS.find((t) => t.id === 'deck')?.port ?? 4316
+
+/**
+ * A link to JQ Deck on the reader's own computer, asking it for one repository by name.
+ * This page cannot open a session: it holds no folder path and no session id. The local
+ * page does hold the path, and can open the folder. The link is only any use to someone
+ * sitting at the machine named beside it, and says so.
+ */
+const localLink = (name: string, label: string) => `<a href="http://127.0.0.1:${DECK_PORT}/?find=${esc(encodeURIComponent(name))}">${label}</a>`
+
 const freshnessWords = (f: MachineState['freshness']) => (f === 'fresh' ? 'reporting' : f === 'quiet' ? 'quiet, not counted' : 'silent for over a day, rows hidden')
 
 const td = (label: string, value: string, note = '') => `<td><span class="lab">${label}</span>${value}${note ? `<small>${note}</small>` : ''}</td>`
@@ -207,7 +223,7 @@ function row(r: ReportRow, now: number, view: View): string {
   const first =
     view.group === 'repo'
       ? `<span class="who"><span class="av" aria-hidden="true">${esc(initials(r.who))}</span><span><b>${esc(r.who)} · <span class="mono">${esc(r.machine)}</span></b><small>folder <span class="mono">${esc(r.name)}</span></small></span></span>`
-      : `<b>${esc(r.name)}</b>${r.remote ? `<small class="mono">${esc(r.remote)}</small>` : ''}`
+      : `<b>${esc(r.name)}</b>${r.remote ? `<small class="mono">${remoteLink(r.remote)}</small>` : ''}`
   // An old question may have been answered since: shown only while the machine is current.
   const asked = (r.questions ?? [])
     .map((q) => `<div class="q"><span class="mut">${esc(r.who)}'s session asked${q.asked_at ? ` ${esc(heard(minutesSince(q.asked_at, now)))}` : ''}</span><p>${esc(q.text)}</p></div>`)
@@ -244,10 +260,10 @@ export function renderTeam(team: Team, viewerName: string, version: string, view
     const items = queue
       .map(
         (r) =>
-          `<li><div class="q-main"><span class="bang" aria-hidden="true">!</span><div><b>${esc(r.name)}</b>${r.remote ? `<small class="mono">${esc(r.remote)}</small>` : ''}<small>${plural(r.needs_you, 'waiting session', 'waiting sessions')}</small></div></div><div class="q-where"><b>${esc(r.who)} · <span class="mono">${esc(r.machine)}</span></b><small>Answer on this machine</small></div><div class="q-age">${r.waiting_minutes !== null ? `<b>${esc(duration(r.waiting_minutes))}</b><small>waiting</small>` : `<b aria-hidden="true">—</b><small>how long was not reported</small>`}</div></li>`,
+          `<li><div class="q-main"><span class="bang" aria-hidden="true">!</span><div><b>${esc(r.name)}</b>${r.remote ? `<small class="mono">${remoteLink(r.remote)}</small>` : ''}<small>${plural(r.needs_you, 'waiting session', 'waiting sessions')}</small></div></div><div class="q-where"><b>${esc(r.who)} · <span class="mono">${esc(r.machine)}</span></b><small>Answer on this machine</small><small>At ${esc(r.machine)} now? ${localLink(r.name, 'Open it in JQ Deck there')}</small></div><div class="q-age">${r.waiting_minutes !== null ? `<b>${esc(duration(r.waiting_minutes))}</b><small>waiting</small>` : `<b aria-hidden="true">—</b><small>how long was not reported</small>`}</div></li>`,
       )
       .join('')
-    attention = `<section class="attn" id="attention" aria-labelledby="h-attn"><div class="sec"><div><p class="kick">Needs attention</p><h2 id="h-attn">Waiting on a person <span>(${t.needs_you})</span></h2><p>Longest wait first. One line per folder a machine reported, with how many of its sessions wait.</p></div></div><ol class="queue">${items}</ol><p class="note">This board cannot answer a session. Answer each one in the session on its own machine.</p></section>`
+    attention = `<section class="attn" id="attention" aria-labelledby="h-attn"><div class="sec"><div><p class="kick">Needs attention</p><h2 id="h-attn">Waiting on a person <span>(${t.needs_you})</span></h2><p>Longest wait first. One line per folder a machine reported, with how many of its sessions wait.</p></div></div><ol class="queue">${items}</ol><p class="note">This board cannot answer a session, and it cannot open one: it holds no folder path. Answer each one on its own machine. The JQ Deck link works only on the machine it names, and only while JQ Deck is running there.</p></section>`
   } else if (known > 0 && !anyFresh) {
     attention = `<section class="strip" id="attention" aria-labelledby="h-attn"><p class="kick">Not current</p><h2 id="h-attn">No machine has reported in the last 5 minutes</h2><p>What is below is each machine's last report. None of it is counted, and a session may have been answered or closed since.</p></section>`
   } else if (known > 0) {
@@ -259,7 +275,7 @@ export function renderTeam(team: Team, viewerName: string, version: string, view
     .map((s) => {
       const r = s.rows[0]
       const m = machineOf.get(r.machine)
-      const title = view.group === 'repo' ? `<b>${esc(r.repo_name)}</b>${r.remote ? `<span class="mono">${esc(r.remote)}</span>` : ''}` : `<b class="mono">${esc(r.machine)}</b><span class="mono">${esc(r.who)}${m ? ` · ${freshnessWords(m.freshness)}` : ''}</span>`
+      const title = view.group === 'repo' ? `<b>${esc(r.repo_name)}</b>${r.remote ? `<span class="mono">${remoteLink(r.remote)}</span>` : ''}` : `<b class="mono">${esc(r.machine)}</b><span class="mono">${esc(r.who)}${m ? ` · ${freshnessWords(m.freshness)}` : ''}</span>`
       return `<tbody><tr class="group"><th colspan="6" scope="rowgroup"><span class="g"><span>${title}</span><i${s.waiting > 0 ? ' class="hot"' : ''}>${plural(s.rows.length, 'report', 'reports')} · ${s.waiting > 0 ? `${s.waiting} waiting` : 'none waiting'}</i></span></th></tr>${s.rows.map((x) => row(x, now, view)).join('')}</tbody>`
     })
     .join('')

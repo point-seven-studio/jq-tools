@@ -233,6 +233,22 @@ describe('the page', () => {
     expect(page).not.toContain('<b>x</b>')
     expect(page).toContain('&lt;b&gt;x&lt;/b&gt;')
   })
+  it('marks the repository a team board asked for by name, and says so when it is not on this machine', () => {
+    const hit = renderShell(o, 'overview', null, '0', '', 'ok')
+    expect(hit.match(/<tr class="found">/g)).toHaveLength(1)
+    expect(hit).toContain('The team board sent you here for <b>ok</b>, marked below. No session in it is waiting on you now.')
+    expect(renderShell(o, 'overview', null, '0', '', '<b>x</b>')).toContain('sent you here for <b>&lt;b&gt;x&lt;/b&gt;</b>, marked below. A session in it is waiting on you.')
+    const miss = renderShell(o, 'overview', null, '0', '', '<i>nope</i>')
+    expect(miss).not.toContain('class="found"')
+    expect(miss).not.toContain('<i>nope</i>')
+    expect(miss).toContain('no repository of that name has a session on this machine. The waiting session is on another machine.')
+    expect(renderShell(o, 'overview', null, '0')).not.toMatch(/class="found"|sent you here/)
+  })
+  it('links each repository to its folder in the editor, with the path escaped', () => {
+    const page = renderShell(o, 'overview', null, '0')
+    expect(page).toContain('<a class="open" href="vscode://file/code/ok">Open folder in VS Code</a>')
+    expect(page).toContain('href="vscode://file/code/%3Cb%3Ex%3C/b%3E"')
+  })
   it('opens Setup on the asked repository, else the first with something to fix', () => {
     expect(pickRepo(o.repos, null)!.name).toBe('ok')
     expect(pickRepo(o.repos, repoId('/code/<b>x</b>'))!.name).toBe('<b>x</b>')

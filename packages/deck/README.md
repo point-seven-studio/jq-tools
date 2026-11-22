@@ -54,6 +54,8 @@ Optional. `~/.jq/config.json`, or the file named by `--config` or `$JQ_DECK_CONF
 ## What it reads, and what it does not send
 
 - It reads the tail of each session transcript under `~/.claude/projects` and the process table (jq-agents), the Claude Code settings and `CLAUDE.md` files of each repository listed (jq-groundcrew), and the message files in the mailbox (jq-crosstalk). Each tool's README lists exactly what it opens.
+- Each repository on the Overview has an **Open folder in VS Code** link (`vscode://file/...`). It is a link on a page served to this machine, so the path goes nowhere. A session started from the editor is in that window.
+- **`/?find=NAME`** marks the repository of that name. A team board links here that way, because it knows names and never paths. When no repository of that name has a session on this machine, the page says so.
 - It is **read-only**. There is no way to answer a session or send mail from the page.
 - **Question text is off by default.** The page says a session is waiting, not what it asked. `--questions DIR,DIR` turns it on for sessions under those folders.
 - **Mail is shown in full** on the Mail tab, to anyone who can open the page on this machine.
