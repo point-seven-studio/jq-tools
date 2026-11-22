@@ -25,6 +25,8 @@ export const DEFAULT_PORT = 4316
 export interface Args {
   json: boolean
   watch: boolean
+  /** --watch says nothing when a report goes through. For a login job, whose log would otherwise grow by a line a minute. */
+  quiet: boolean
   exec: string | null
   intervalS: number
   /** Repositories --watch may report. null: not said on the command line. */
@@ -47,6 +49,7 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
   const a: Args = {
     json: false,
     watch: false,
+    quiet: false,
     exec: null,
     intervalS: Number(env.JQ_DECK_INTERVAL_S) || 60,
     repos: null,
@@ -69,6 +72,7 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     const f = argv[i]
     if (f === '--json') a.json = true
     else if (f === '--watch') a.watch = true
+    else if (f === '--quiet') a.quiet = true
     else if (f === '--exec') a.exec = value(i++, f)
     else if (f === '--repos') a.repos = list(value(i++, f))
     else if (f === '--all-repos') a.allRepos = true
@@ -210,8 +214,9 @@ export async function run(argv: string[], version: string): Promise<void> {
         const code = await hand(a.exec as string, report)
         const line = `jq-deck: ${report.repos.length} ${report.repos.length === 1 ? 'repository' : 'repositories'} reported to your command`
         // Say so every time it fails: a sink that dies quietly is invisible.
-        if (code === 0) console.log(line)
-        else console.error(`${line}, which FAILED (exit ${code})`)
+        if (code === 0) {
+          if (!a.quiet) console.log(line)
+        } else console.error(`${new Date().toISOString()} ${line}, which FAILED (exit ${code})`)
       } catch (e: any) {
         console.error('jq-deck: report failed:', e?.message || e)
       }

@@ -2,7 +2,7 @@
 
 One command, one local page: every Claude Code session on your machine, the setup check for each repository, and the mailbox between sessions.
 
-It is [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents), [jq-groundcrew](https://www.npmjs.com/package/@point-seven-studio/jq-groundcrew) and [jq-crosstalk](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk) behind one page. It reads what they read and writes nothing.
+It is [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents), [jq-groundcrew](https://www.npmjs.com/package/@point-seven-studio/jq-groundcrew) and [jq-crosstalk](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk) behind one page. It reads what they read. It writes one small note while its page runs, so the other JQ pages can link to it, and nothing else unless you run `jq-deck join`.
 
 ![The JQ Deck overview: one row per repository with its sessions, setup score and unread mail.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck/docs/screenshot.png)
 
@@ -73,6 +73,28 @@ Every interval (60 seconds, or `--interval`), your command receives one JSON rep
 - **A report is counts and scores:** per repository its name, git remote, session counts, how long the longest-waiting session has waited, the setup score and the unread count. No folder path, no message, no file name.
 - **Question text is not sent unless you opt a folder in:** `--send-questions ~/code/shop` (or `sendQuestions` in the config file) adds what each waiting session under that folder asked. `--questions` is about your own screen and sends nothing. The repository must also be one you report. The relay says at start whether question text is being sent.
 - If the command fails, jq-deck says so each time.
+
+### Keep reporting after a restart: `jq-deck join`
+
+`--watch` reports only while its terminal stays open. `join` sets a machine up once:
+
+```sh
+npm install -g @point-seven-studio/jq-deck @point-seven-studio/jq-deck-server
+export JQ_DECK_TOKEN=jqm_...
+jq-deck join --url https://deck.example.com --repos shop,api
+```
+
+- **It sends one report first.** If the board refuses it (a wrong address or token), nothing is written.
+- **It saves the token** in `~/.jq/deck-token`, readable by you only. Without `$JQ_DECK_TOKEN` it asks for the token in the terminal.
+- **It writes the list you gave** as `report` in the config file, and a short script, `~/.jq/deck-report.sh`, that you can read. The script holds no token: it reads the file.
+- **It installs a login job** that runs that script: a launchd job on macOS, a systemd user unit on Linux. On another system, or with `--no-service`, it installs none and tells you the command to keep running.
+- **It says which named repositories have no session,** so a spelling slip shows at once.
+- `--board ADDRESS` saves the board's own page as `team`, so the local pages link to it. `--send-questions` is as for `--watch`. There is no `--all-repos` here: a machine that reports by itself reports only what you named.
+- `jq-deck leave` stops the job and removes the job file, the script and the token file. The token itself works until you remove the machine on the board.
+
+**On macOS, a login job cannot read Desktop, Documents or Downloads.** A repository kept there is still reported, but its row may have no git remote and no setup score. `join` tells you when this applies and gives the two ways out: give `node` Full Disk Access in System Settings, or keep the reporter in a terminal.
+
+It must be installed, not run through `npx`: the login job has to find it after a restart. It needs `jq-deck-server` installed too, which is what sends each report; `jq-deck` itself still makes no outbound call.
 
 ## As a library
 
