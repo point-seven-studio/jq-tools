@@ -33,6 +33,8 @@ import {
   type PendingEvent,
   type RunRecord,
   type RunResult,
+  answerDigest,
+  requestDigest,
 } from './worker.js'
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/
@@ -387,6 +389,15 @@ function settle(o: WorkerOptions, dir: string, state: WorkerState, thread: strin
 }
 
 /** Has the person answered? An answer file from `crosstalk approve`, or a reply to the request from the approver. */
+/** The fingerprint of a waiting request as it is on disk, unread or acknowledged. Null when the file is gone. */
+function requestOnDisk(root: string, w: Waiting): string | null {
+  for (const where of ['inbox', 'archive']) {
+    const file = path.join(root, where, w.approver, w.request)
+    if (existsSync(file)) return requestDigest(body(readFileSync(file, 'utf8')))
+  }
+  return null
+}
+
 function findAnswer(o: WorkerOptions, dir: string, w: Waiting, events: PendingEvent[]): { answer: 'allow' | 'deny'; reply: PendingEvent | null } | null {
   const file = path.join(dir, 'answers', w.tool_use_id)
   if (existsSync(file)) {
@@ -398,7 +409,11 @@ function findAnswer(o: WorkerOptions, dir: string, w: Waiting, events: PendingEv
     if (e.reply_to !== w.request || e.from !== w.approver || e.replayed) continue
     // An approver with a key must have signed the answer. One without a key is taken at its word.
     if (signers.has(w.approver) ? e.signature !== 'verified' : e.signature !== 'not-required') continue
-    const answer = parseAnswer(body(readFileSync(e.path, 'utf8')))
+    const text = body(readFileSync(e.path, 'utf8'))
+    // An answer that says which request text it read must have read this one.
+    const claimed = answerDigest(text)
+    if (claimed && claimed !== requestOnDisk(o.root, w)) continue
+    const answer = parseAnswer(text)
     if (answer) return { answer, reply: e }
   }
   return null

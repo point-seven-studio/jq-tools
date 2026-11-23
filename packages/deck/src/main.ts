@@ -1,6 +1,7 @@
 /** Entry point of the `jq-deck` bundle. */
 import { DEFAULT_PORT, run } from './cli.js'
 import { join, leave } from './join.js'
+import { runApprovals } from './approvals.js'
 
 declare const __JQ_DECK_VERSION__: string
 const VERSION = typeof __JQ_DECK_VERSION__ === 'string' ? __JQ_DECK_VERSION__ : 'dev'
@@ -28,6 +29,14 @@ const HELP = `JQ Deck ${VERSION}: one page for your Claude Code sessions, their 
         --send-questions DIR,DIR as for --watch (default: none)
         --no-service             write the files, install no login job
   jq-deck leave                  stop reporting and remove what join wrote
+  jq-deck approvals --exec CMD   hand the TEXT of each approval request a crosstalk worker
+                                 is waiting on to CMD, and put the signed answers CMD
+                                 prints into the mailbox. Off unless you run it. Only for
+                                 an approver with a key, and only an answer that is signed,
+                                 replies to a waiting request and names its exact text.
+        --watch                  keep looking (--interval SECONDS, default 30)
+  jq-deck approvals trust NAME KEY
+                                 let the holder of KEY sign answers as NAME in this mailbox
   jq-deck --mailbox DIR          the crosstalk mailbox to show (default: $CROSSTALK_DIR,
                                  or the nearest folder above you holding .crosstalk)
   jq-deck --questions DIR,DIR    show the question a waiting session asked, for
@@ -39,10 +48,10 @@ const HELP = `JQ Deck ${VERSION}: one page for your Claude Code sessions, their 
   jq-deck --port NUMBER
 
 It reads what jq-agents, jq-groundcrew and jq-crosstalk read. It writes a small note
-while its page runs, and nothing else unless you run join.
+while its page runs, and nothing else unless you run join or approvals.
 The page is served to this machine only. Nothing about your sessions leaves it
-unless you pass --exec (your command gets the report) or --probe (one timed
-connection). When you open the page it asks npm once a day for the latest version
+unless you pass --exec (your command gets the report, or with approvals the waiting
+requests) or --probe (one timed connection). When you open the page it asks npm once a day for the latest version
 number; --no-update-check turns that off.
 
 Unofficial. Not affiliated with or endorsed by Anthropic.`
@@ -50,6 +59,11 @@ Unofficial. Not affiliated with or endorsed by Anthropic.`
 const args = process.argv.slice(2)
 if (args.includes('--help') || args.includes('-h')) console.log(HELP)
 else if (args.includes('--version') || args.includes('-v')) console.log(VERSION)
+else if (args[0] === 'approvals')
+  runApprovals(args.slice(1)).catch((error: any) => {
+    console.error(`jq-deck: ${error.message || error}`)
+    process.exit(1)
+  })
 else if (args[0] === 'join' || args[0] === 'leave')
   (args[0] === 'join' ? join(args.slice(1)) : leave()).catch((error: any) => {
     console.error(`jq-deck: ${error.message || error}`)

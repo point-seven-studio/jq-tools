@@ -20,4 +20,4 @@ export {
   type SignedFields,
 } from './sign.js'
 export { parseTimer, parseWhen, parseEvery, nextDue, type Timer } from './timers.js'
-export { ENDINGS, parseRuns, summarizeRuns, type Ending, type RunRecord, type RunSummary } from './worker.js'
+export { ENDINGS, REQUEST_DIGEST_KEY, answerDigest, parseAnswer, parseRuns, requestDigest, summarizeRuns, type Ending, type RunRecord, type RunSummary } from './worker.js'

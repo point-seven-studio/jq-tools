@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { parse } from '../src/cli.js'
 import { renderTeam } from '../src/page.js'
 import { sanitizeReport, type TeamReport } from '../src/report.js'
-import { reportUrl, send } from '../src/send.js'
+import { approvalsUrl, reportUrl, sanitizeApprovals, send, sendApprovals } from '../src/send.js'
 import { SECURITY_HEADERS, handle, startServer, type ServerContext } from '../src/server.js'
 import { addMachine, addViewer, initStore, machineFor, readConfig, readReports, remove, viewerFor } from '../src/store.js'
 import { buildTeam, duration, freshness, visible } from '../src/team.js'
@@ -490,6 +490,26 @@ describe('send and the command line', () => {
     expect(sent.url).toBe('https://deck.example.com/report')
     expect(JSON.parse(sent.init.body)).toEqual(report())
     expect(sent.init.headers.authorization).toBe('Bearer jqm_t')
+  })
+  it('posts approval requests beside the report address, with only the fields a request has', async () => {
+    expect(approvalsUrl('https://deck.example.com').href).toBe('https://deck.example.com/approvals')
+    expect(approvalsUrl('https://api.example.com/api/jq-deck/report').href).toBe('https://api.example.com/api/jq-deck/approvals')
+    expect(() => approvalsUrl('http://deck.example.com')).toThrow('https')
+    const one = { request: 'r.md', worker: 'api', approver: 'phone', thread: 't', subject: 'Approve?', tool: 'Bash', asked_at: '2026-12-01T09:00:00Z', text: 'git push', digest: 'ab' }
+    expect(sanitizeApprovals({ v: 1, generated_at: 'now', mailbox: '/Users/dana/crosstalk', pending: [{ ...one, path: '/Users/dana' }] })).toEqual({ v: 1, generated_at: 'now', pending: [one] })
+    expect(() => sanitizeApprovals({ v: 1 })).toThrow('not a list of approval requests')
+    expect(() => sanitizeApprovals({ repos: [] })).toThrow('not a list of approval requests')
+    let sent: any
+    const fake = (async (url: URL, init: RequestInit) => {
+      sent = { url: url.href, init }
+      return new Response('{"v":1,"answers":[]}', { status: 200 })
+    }) as unknown as typeof fetch
+    expect(await sendApprovals('https://api.example.com/api/jq-deck/report', 'jqm_t', JSON.stringify({ v: 1, generated_at: 'now', pending: [one] }), fake)).toBe('{"v":1,"answers":[]}')
+    expect(sent.url).toBe('https://api.example.com/api/jq-deck/approvals')
+    expect(sent.init.headers.authorization).toBe('Bearer jqm_t')
+    await expect(sendApprovals('https://deck.example.com', undefined, '{}')).rejects.toThrow('JQ_DECK_TOKEN')
+    const gone = (async () => new Response('not found', { status: 404 })) as unknown as typeof fetch
+    await expect(sendApprovals('https://deck.example.com', 'jqm_t', JSON.stringify({ v: 1, pending: [] }), gone)).rejects.toThrow('does not take approval requests')
   })
   it('parses commands', () => {
     expect(parse(['add-viewer', 'lee', '--repos', 'shop,api'])).toMatchObject({ command: 'add-viewer', positional: ['lee'], options: { '--repos': 'shop,api' } })

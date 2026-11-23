@@ -64,6 +64,14 @@ docker exec <container> jq-deck-server add-machine dana-laptop --who "Dana"
 
 The data folder is `/data`. Mount a volume there, or a restart forgets every token. The port comes from `$PORT` when the platform sets one. `GET /healthz` answers `ok` for a health check.
 
+## Approval requests
+
+From version 0.7.0, `jq-deck-server approvals --url ADDRESS` is the sending half of [`jq-deck approvals`](https://www.npmjs.com/package/@point-seven-studio/jq-deck): it posts the approval requests a crosstalk worker is waiting on to `/approvals` beside the report address, with the same machine token, and prints what the board answers.
+
+- These requests are text, not counts: each quotes the command that is waiting.
+- It sends only the fields a request has, whatever was piped in.
+- **This package's own server does not take them.** `serve` has no `/approvals`, so against it the command fails with "this board does not take approval requests". The command is for a board that does.
+
 ## The page
 
 - **The line at the top** says how many sessions are waiting on a person and which has waited longest.

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { generateSigningKey, renderSignedMessage } from '../src/sign.js'
 import { DAY, HOUR, deliveryName, nextDue, parseEvery, parseSpan, parseTimer, parseWhen, renderTimer } from '../src/timers.js'
-import { DEFAULT_ASK, approvalRequest, classify, decideCall, dropReason, groupByThread, parseAnswer, parseAskRules, parseResult, runsToday, summarizeRuns, touchesApprovals, type PendingEvent } from '../src/worker.js'
+import { DEFAULT_ASK, answerDigest, approvalRequest, classify, decideCall, dropReason, groupByThread, parseAnswer, parseAskRules, parseResult, requestDigest, runsToday, summarizeRuns, touchesApprovals, type PendingEvent } from '../src/worker.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const TOOL = path.join(HERE, '../bin/crosstalk')
@@ -166,6 +166,13 @@ describe('which commands wait for a person', () => {
     expect(decideCall({ tool: 'Write', input: { file_path: 'a/.env' }, answer: null, rules: r, workerDir: '/w', canAsk: true })?.decision).toBe('defer')
     expect(decideCall({ tool: 'Write', input: { file_path: 'a.ts' }, answer: null, rules: r, workerDir: '/w', canAsk: true })).toBeNull()
     expect(() => parseAskRules('Bash: (')).toThrow('regular expression')
+  })
+  it('fingerprints a request by its text, ignoring the space around it', () => {
+    expect(requestDigest('  git push\n')).toBe(requestDigest('git push'))
+    expect(requestDigest('git push')).not.toBe(requestDigest('git push --force'))
+    expect(answerDigest(`approve\n\nrequest-sha256: ${requestDigest('x')}`)).toBe(requestDigest('x'))
+    expect(answerDigest('approve')).toBeNull()
+    expect(answerDigest('request-sha256: nothex')).toBeNull()
   })
   it('reads only approve or deny as an answer', () => {
     expect(parseAnswer('approve\nthanks')).toBe('allow')
@@ -346,6 +353,27 @@ describe('the worker', () => {
     expect(lines('decisions')).toEqual(['defer', 'allow'])
     expect(archive('api')).toContain('answer.md')
     expect(inbox('api')).toContain('forged.md')
+  })
+  it('takes a signed answer that names the request text, and not one that names another text', () => {
+    const { publicKey, privateKey } = generateSigningKey()
+    execFileSync('mkdir', ['-p', path.join(box, 'inbox/human'), path.join(box, 'archive/human')])
+    writeFileSync(path.join(box, 'registry/signers.txt'), `human: ${publicKey}\n`)
+    ct(['send', 'api', 'Ship it'], { self: 'web' })
+    mode('bash:git push origin main')
+    work()
+    const request = inbox('human')[0]
+    const raw = readFileSync(path.join(box, 'inbox/human', request), 'utf8')
+    const thread = raw.match(/^thread: (.+)$/m)![1]
+    const text = raw.replace(/^---\n[\s\S]*?\n---\n?/, '')
+    const fields = { from: 'human', to: 'api', subject: 'Re: Approve?', sent: '2026-12-01T00:00:00Z', kind: 'notice', thread, reply_to: request, author: '' }
+    // Signed, but given to a different text than the one the run is waiting on.
+    writeFileSync(path.join(box, 'inbox/api/other.md'), renderSignedMessage({ filename: 'other.md', ...fields, body: `approve\n\nrequest-sha256: ${requestDigest('git push --force origin main')}` }, privateKey))
+    work()
+    expect(lines('decisions')).toEqual(['defer'])
+    writeFileSync(path.join(box, 'inbox/api/right.md'), renderSignedMessage({ filename: 'right.md', ...fields, body: `approve\n\nrequest-sha256: ${requestDigest(text)}` }, privateKey))
+    work()
+    expect(lines('decisions')).toEqual(['defer', 'allow'])
+    expect(archive('api')).toContain('right.md')
   })
   it('refuses a second worker for the same name while one holds the lock', () => {
     execFileSync('mkdir', ['-p', path.join(box, 'worker/api/lock')])
