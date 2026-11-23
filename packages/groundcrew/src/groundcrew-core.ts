@@ -48,6 +48,33 @@ export interface SettingsFile {
   cleanupPeriodDays: number | null
 }
 
+/** How the notes in an auto memory folder line up with its index. */
+export interface MemoryFolder {
+  /** Note files in the folder, not counting the index. */
+  files: number
+  /** Notes the index does not link to. A session reads the index, so it never learns these exist. */
+  unlisted: number
+  /** Links in the index to a note that is not there. */
+  missing: number
+}
+
+/**
+ * Compare an index with the folder it describes. `index` is the text of MEMORY.md, or null
+ * when there is none; `names` is the folder's markdown files. Pure.
+ */
+export function memoryFolder(index: string | null, names: string[]): MemoryFolder {
+  const notes = names.filter((n) => n.toLowerCase().endsWith('.md') && n !== 'MEMORY.md')
+  const linked = new Set<string>()
+  for (const m of (index ?? '').matchAll(/\]\(\s*(?:\.\/)?([^)\s#]+\.md)(?:#[^)]*)?\s*\)/g)) linked.add(m[1])
+  const have = new Set(notes)
+  return {
+    files: notes.length,
+    unlisted: notes.filter((n) => !linked.has(n)).length,
+    // A link with a folder in it, or to a web address, is not a note in this folder.
+    missing: [...linked].filter((n) => !n.includes('/') && !have.has(n)).length,
+  }
+}
+
 export interface SetupFacts {
   platform: string
   memory: MemoryFile[]
@@ -55,6 +82,8 @@ export interface SetupFacts {
   ruleFiles: number
   /** The auto memory index, when the project has one. */
   autoMemoryIndex: MemoryFile | null
+  /** The auto memory folder beside the index: counts only, never a file's name. Absent when a caller did not look. */
+  autoMemoryFolder?: MemoryFolder
   settings: SettingsFile[]
   skills: { project: number; user: number }
   subagents: { project: number; user: number }
@@ -384,6 +413,31 @@ function memoryChecks(facts: SetupFacts): Unprompted[] {
       fix: over ? 'Shorten the index, or merge entries, so the ones that matter are in the part that loads.' : '',
       source,
     })
+  }
+  const folder = facts.autoMemoryFolder
+  if (folder && folder.files) {
+    const base = { id: 'auto-memory-folder', group: 'setup' as const, title: 'Auto memory notes are in the index', source }
+    if (!index) {
+      checks.push({
+        ...base,
+        status: 'warn',
+        detail: `The memory folder holds ${plural(folder.files, 'note')} and no MEMORY.md. A session loads the index, not the folder, so nothing tells it these notes exist.`,
+        fix: 'Add a MEMORY.md with one line per note: a link to the file and a few words on when it matters.',
+      })
+    } else if (folder.unlisted || folder.missing) {
+      const parts = [
+        folder.unlisted ? `${plural(folder.unlisted, 'note')} of ${folder.files} ${folder.unlisted === 1 ? 'is' : 'are'} not linked from MEMORY.md, so a session never learns ${folder.unlisted === 1 ? 'it exists' : 'they exist'}` : '',
+        folder.missing ? `${plural(folder.missing, 'link')} in MEMORY.md ${folder.missing === 1 ? 'points' : 'point'} to a note that is not there` : '',
+      ].filter(Boolean)
+      checks.push({
+        ...base,
+        status: 'warn',
+        detail: `${parts.join(', and ')}.`,
+        fix: 'Compare the folder with the links in MEMORY.md. Add a line for each note worth keeping, delete the notes that are not, and remove links to notes that are gone.',
+      })
+    } else {
+      checks.push({ ...base, status: 'pass', detail: `All ${plural(folder.files, 'note')} are linked from MEMORY.md.`, fix: '' })
+    }
   }
   return checks
 }
@@ -784,6 +838,8 @@ export function promptFor(check: Unprompted, facts: SetupFacts): string {
     }
     case 'auto-memory-index':
       return 'The auto memory index MEMORY.md is longer than what loads (the first 200 lines or 25 KB). Read it and propose which entries to merge, shorten or remove so that the ones that matter load. Show me the new index before you save it.'
+    case 'auto-memory-folder':
+      return 'The notes in this project\'s auto memory folder do not line up with its index, MEMORY.md. List the markdown files in the folder and the links in MEMORY.md. Tell me which notes have no line in the index and which links point to a note that is gone. For each note with no line, read it and say whether to add a line for it or delete it, and why. Show me the new MEMORY.md before you save it, and delete nothing until I approve.'
     case 'hooks':
       return (
         'This project has no Claude Code hooks. Look at how it formats, lints and tests code. Propose at most two hooks for .claude/settings.json that run after an edit ' +
@@ -847,6 +903,7 @@ export const LAYER_OF: Readonly<Record<string, Layer>> = {
   'stop-check': 'loop',
   'run-limits': 'loop',
   'auto-memory-index': 'memory',
+  'auto-memory-folder': 'memory',
   'allow-rules': 'permissions',
   'subagents-and-mcp': 'permissions',
   'deny-secrets': 'permissions',

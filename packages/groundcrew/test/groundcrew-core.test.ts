@@ -450,3 +450,29 @@ describe('findUnattendedRuns', () => {
     expect(runChecks(facts()).find((c) => c.id === 'run-limits')).toBeUndefined()
   })
 })
+
+describe('the auto memory folder', () => {
+  const index = '- [Deploys](deploys.md) — how\n- [Old](./gone.md) — removed\n- [Docs](https://example.com/a.md)\n- [Deep](sub/x.md)\n'
+  it('counts notes the index does not link to, and links to notes that are gone', async () => {
+    const { memoryFolder } = await import('../src/groundcrew-core.js')
+    expect(memoryFolder(index, ['MEMORY.md', 'deploys.md', 'stray.md', 'notes.txt'])).toEqual({ files: 2, unlisted: 1, missing: 1 })
+    expect(memoryFolder(null, ['a.md', 'b.md'])).toEqual({ files: 2, unlisted: 2, missing: 0 })
+    expect(memoryFolder('- [A](a.md#part)', ['a.md'])).toEqual({ files: 1, unlisted: 0, missing: 0 })
+  })
+  it('warns about notes with no index, and about notes or links that do not line up', () => {
+    const idx = { label: 'MEMORY.md', lines: 3, bytes: 90 }
+    expect(status(facts({ autoMemoryFolder: { files: 4, unlisted: 4, missing: 0 } }), 'auto-memory-folder')).toBe('warn')
+    expect(status(facts({ autoMemoryIndex: idx, autoMemoryFolder: { files: 4, unlisted: 1, missing: 0 } }), 'auto-memory-folder')).toBe('warn')
+    expect(status(facts({ autoMemoryIndex: idx, autoMemoryFolder: { files: 4, unlisted: 0, missing: 2 } }), 'auto-memory-folder')).toBe('warn')
+    expect(status(facts({ autoMemoryIndex: idx, autoMemoryFolder: { files: 4, unlisted: 0, missing: 0 } }), 'auto-memory-folder')).toBe('pass')
+  })
+  it('says nothing when there is no folder, an empty one, or a caller that did not look', () => {
+    expect(runChecks(facts({})).some((c) => c.id === 'auto-memory-folder')).toBe(false)
+    expect(runChecks(facts({ autoMemoryFolder: { files: 0, unlisted: 0, missing: 0 } })).some((c) => c.id === 'auto-memory-folder')).toBe(false)
+  })
+  it('names no file', () => {
+    const text = JSON.stringify(runChecks(facts({ autoMemoryIndex: { label: 'MEMORY.md', lines: 3, bytes: 90 }, autoMemoryFolder: { files: 4, unlisted: 1, missing: 1 } })).filter((c) => c.id === 'auto-memory-folder'))
+    expect(text).toContain('1 note of 4 is not linked')
+    expect(text).toContain('1 link in MEMORY.md points to a note that is not there')
+  })
+})
