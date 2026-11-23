@@ -426,4 +426,5 @@ export const NOT_MEASURED: Record<string, string[]> = {
   cost: ['cost per request', 'budget alerts'],
   feedback: ['thumbs up or down', 'written comments', 'edit rate', 'regenerations', 'session abandonment over time'],
   safety: ['jailbreak attempts', 'PII detections', 'toxicity flags', 'policy violations'],
+  runs: ['whether a message was worth sending', 'how long a run waited for its answer'],
 }

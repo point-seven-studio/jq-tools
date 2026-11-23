@@ -5,6 +5,7 @@
  * all" is a link the server answers. One HTML string, no script, no outside request. Names of tools, models and
  * folders come from files on disk, so every value is escaped.
  */
+import { ENDINGS, type WorkerRuns } from './worker-runs.js'
 import { TOOLBAR_CSS } from './presence.js'
 import { NOT_MEASURED, type Signals, type Spread } from './signals.js'
 import type { SignalsResult } from './signals-read.js'
@@ -104,11 +105,28 @@ function split(parts: { name: string; value: number }[], words: string): string 
 
 function area(n: number, key: string, title: string, lead: string, body: string, head: Head, open: boolean): string {
   const not = NOT_MEASURED[key] ?? []
-  return `<details class="card" id="${key}"${open ? ' open' : ''}><summary><span class="top"><span class="num">${n}</span><span class="ttl">${esc(title)}</span><span class="tog" aria-hidden="true"></span></span><span class="fig"><b>${esc(head.value)}</b><span>${esc(head.label)}</span></span>${head.visual ? `<span class="vis">${head.visual}</span>` : ''}</summary><div class="body"><p class="lead">${esc(lead)}</p>${body}${not.length ? `<p class="not"><b>Not in a transcript:</b> ${esc(not.join('; '))}.</p>` : ''}</div></details>`
+  return `<details class="card" id="${key}"${open ? ' open' : ''}><summary><span class="top"><span class="num">${n}</span><span class="ttl">${esc(title)}</span><span class="tog" aria-hidden="true"></span></span><span class="fig"><b>${esc(head.value)}</b><span>${esc(head.label)}</span></span>${head.visual ? `<span class="vis">${head.visual}</span>` : ''}</summary><div class="body"><p class="lead">${esc(lead)}</p>${body}${not.length ? `<p class="not"><b>${key === 'runs' ? 'Not recorded' : 'Not in a transcript'}:</b> ${esc(not.join('; '))}.</p>` : ''}</div></details>`
 }
 
-/** `bar` is the links to the other tools (presence.ts `toolbar`), or ''. */
-export function renderSignals(result: SignalsResult, now = Date.now(), bar = '', openAll = false): string {
+const ENDED: Record<string, string> = { message: 'sent mail', nothing: 'nothing to send', asked: 'asked a person', failed: 'failed', dropped: 'not run' }
+
+/** The ninth box: how the runs of a crosstalk worker ended. Made only when a worker has run. */
+function runsArea(w: WorkerRuns, span: string, open: boolean): string {
+  const started = w.total - w.byEnding.dropped
+  const parts = ENDINGS.filter((e) => e !== 'dropped').map((e) => ({ name: ENDED[e], value: w.byEnding[e] })).sort((a, b) => b.value - a.value)
+  const head: Head = {
+    value: count(started),
+    label: `${started === 1 ? 'run' : 'runs'} a worker started, ${span}`,
+    visual: split(parts, parts[0]?.value ? `${pct(parts[0].value, started)} ${parts[0].name}` : '') || meter(0, 1, 'no run started'),
+  }
+  const body = `<div class="tiles">${tile(count(w.byEnding.message), 'sent mail')}${tile(count(w.byEnding.nothing), 'had nothing to send')}${tile(count(w.byEnding.asked), 'stopped to ask a person')}${tile(count(w.byEnding.failed), 'failed')}${tile(count(w.byEnding.dropped), 'messages not run', 'unsigned, put back, or failed three times')}${tile(usd(w.costUsd), 'cost the runs reported')}</div>
+<h3>By worker</h3>${bars(w.byWorker.map((x) => ({ name: x.name, value: x.total, shown: count(x.total), note: ENDINGS.filter((e) => x.byEnding[e]).map((e) => `${x.byEnding[e]} ${ENDED[e]}`).join(' · ') })), 'No run recorded.')}
+<p class="mut">Many runs with nothing to send means the worker is woken by mail that did not need it. Many that stop to ask means its ask list is wide, or the work should not be unattended.</p>`
+  return area(9, 'runs', 'Worker runs', 'A JQ Crosstalk worker starts a run when mail arrives. Each run ends by sending mail, sending nothing, or stopping to ask a person. Read from the worker’s own record in the mailbox, not from a transcript.', body, head, open)
+}
+
+/** `bar` is the links to the other tools (presence.ts `toolbar`), or ''. `runs` is what a crosstalk worker recorded, when one has run. */
+export function renderSignals(result: SignalsResult, now = Date.now(), bar = '', openAll = false, runs: WorkerRuns | null = null): string {
   const s = result.signals
   const t = s.tokens
   const input = t.input + t.cacheRead + t.cacheWrite
@@ -236,7 +254,7 @@ ${daily(s)}
       `<div class="tiles">${tile(count(denials), 'actions not allowed')}${tile(count(s.refusals), 'replies the model refused')}${tile(count(s.hookBlocks), 'times a hook stopped a turn from ending')}${tile(count(s.sandboxOff), 'commands run outside the sandbox')}</div>
 <h3>Why an action was not allowed</h3>${bars(s.denials.map((d) => ({ name: d.kind, value: d.count, shown: count(d.count) })), 'None recorded.')}`,
     ),
-  ].join('')
+  ].join('') + (runs && runs.total ? runsArea(runs, span, openAll) : '')
 
   const q = (open: boolean) => `/signals?days=${s.days}${open ? '&open=all' : ''}`
   const nav = openAll ? `<a href="${q(false)}">Close all</a>` : `<a href="${q(true)}">Open all</a>`

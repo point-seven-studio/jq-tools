@@ -259,3 +259,52 @@ describe('the command', () => {
     expect(() => parseArgs(['--signals', '--json', '--days', '0'])).toThrow(/1 to 90/)
   })
 })
+
+describe('worker runs', () => {
+  const at = (hoursAgo: number) => new Date(NOW - hoursAgo * 3600_000).toISOString()
+  const line = (o: object) => JSON.stringify(o)
+  const text = [
+    line({ at: at(1), thread: 't1', events: ['a.md'], ended: 'message', cost_usd: 0.25 }),
+    line({ at: at(2), thread: 't2', events: ['b.md'], ended: 'nothing', cost_usd: 0.1 }),
+    line({ at: at(3), thread: 't3', events: ['c.md'], ended: 'asked', reason: 'Approve? Bash: git push' }),
+    line({ at: at(4), thread: 't4', events: ['d.md'], ended: 'dropped', reason: 'not signed' }),
+    line({ at: at(24 * 40), thread: 't5', events: ['e.md'], ended: 'failed' }),
+    line({ at: at(1), ended: 'something else' }),
+    '{"at": "torn',
+  ].join('\n')
+
+  it('counts runs by how they ended, inside the window, and keeps no text from a line', async () => {
+    const { summarizeWorkerRuns } = await import('../src/worker-runs.js')
+    const w = summarizeWorkerRuns([{ name: 'api', text }, { name: 'idle', text: '' }], NOW, 7)
+    expect(w.total).toBe(4)
+    expect(w.byEnding).toEqual({ message: 1, nothing: 1, asked: 1, failed: 0, dropped: 1 })
+    expect(w.costUsd).toBeCloseTo(0.35)
+    expect(w.byWorker).toEqual([{ name: 'api', total: 4, byEnding: w.byEnding }])
+    expect(w.byDay).toHaveLength(7)
+    expect(w.byDay.reduce((n, d) => n + d.runs, 0)).toBe(3) // dropped mail started no run
+    expect(JSON.stringify(w)).not.toMatch(/git push|a\.md|t1/)
+  })
+
+  it('reads a mailbox, and finds nothing where there is no worker', async () => {
+    const { readWorkerRuns } = await import('../src/worker-runs.js')
+    const box = mkdtempSync(path.join(os.tmpdir(), 'jq-runs-'))
+    expect(readWorkerRuns(7, NOW, box)).toBeNull()
+    expect(readWorkerRuns(7, NOW, undefined)).toBeNull()
+    mkdirSync(path.join(box, 'worker', 'api'), { recursive: true })
+    writeFileSync(path.join(box, 'worker', 'api', 'runs.jsonl'), text)
+    expect(readWorkerRuns(7, NOW, box)?.total).toBe(4)
+  })
+
+  it('adds a ninth box only when a worker has run', async () => {
+    const { summarizeWorkerRuns } = await import('../src/worker-runs.js')
+    const result = { signals: summarize([run([reply('m1', 1)])], NOW, 7), files: 1, bytesRead: 0, tookMs: 0 }
+    expect(renderSignals(result, NOW)).not.toContain('Worker runs')
+    expect(renderSignals(result, NOW, '', false, summarizeWorkerRuns([{ name: 'idle', text: '' }], NOW, 7))).not.toContain('Worker runs')
+    const html = renderSignals(result, NOW, '', false, summarizeWorkerRuns([{ name: 'a<b>pi', text }], NOW, 7))
+    expect(html).toContain('id="runs"')
+    expect(html).toContain('<b>3</b><span>runs a worker started, the last 7 days</span>')
+    expect(html).toContain('a&lt;b&gt;pi')
+    expect(html).toContain('<b>Not recorded:</b>')
+    expect(html).not.toContain('<script')
+  })
+})

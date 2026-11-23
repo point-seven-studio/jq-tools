@@ -68,6 +68,8 @@ Sessions are grouped by working tree (the git repository a session is in), becau
 | User feedback | interruptions, actions a person refused | thumbs, comments, edit rate, regenerations |
 | Safety signals | actions not allowed and why, replies the model refused, hooks that stopped a turn, commands run outside the sandbox | jailbreak, PII, toxicity and policy detection |
 
+If you run a [JQ Crosstalk](../crosstalk#a-worker) worker and `$CROSSTALK_DIR` names its mailbox, a ninth box, "Worker runs", counts how the worker's runs ended: sent mail, nothing to send, stopped to ask a person, failed, or not run. It reads the worker's own record (`worker/<name>/runs.jsonl`), not a transcript, and keeps the counts only. With no worker, the box is not shown.
+
 Read these with care:
 
 - **Cost is an estimate, not a bill.** It is the figure Claude Code writes into the transcript. On a subscription it is not what you pay. It is written now and then, so the newest spending may be missing and one day can hold another day's share.
