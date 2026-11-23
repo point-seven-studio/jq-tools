@@ -25,7 +25,7 @@ if [ "${1:-}" = "--check" ]; then
     echo "error: a bundle names a database client, an env loader, a second way to call out, or a way to run a command" >&2
     exit 1
   fi
-  # One outbound call exists: `send`, to the address the user passes. No address is written into the code.
+  # One place calls out, used by `send` and `approvals`, to the address the user passes. No address is written into the code.
   CALLS="$(grep -c -E "(^|[^a-zA-Z_.])fetch\(|= fetch\b" "$OUT" || true)"
   [ "$CALLS" = "1" ] || { echo "error: expected exactly one place that calls out, found $CALLS" >&2; exit 1; }
   if grep -n -o -E "https?://[a-zA-Z0-9./_-]+" "$OUT" | grep -v -E "http://(127\.0\.0\.1|\\$)"; then

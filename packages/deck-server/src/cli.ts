@@ -1,6 +1,6 @@
 /** The `jq-deck-server` command. */
 import path from 'path'
-import { send } from './send.js'
+import { send, sendApprovals } from './send.js'
 import { startServer } from './server.js'
 import { addMachine, addViewer, initStore, readConfig, remove } from './store.js'
 
@@ -87,6 +87,12 @@ export async function run(argv: string[], version: string, env: Record<string, s
     case 'send': {
       if (!p.options['--url']) throw new Error('send needs --url (the team server\'s address)')
       await send(p.options['--url'], env.JQ_DECK_TOKEN, await stdin())
+      return
+    }
+    case 'approvals': {
+      if (!p.options['--url']) throw new Error('approvals needs --url (the board\'s address)')
+      // stdout is the board's answer, for `jq-deck approvals` to read. Nothing else is printed there.
+      process.stdout.write(await sendApprovals(p.options['--url'], env.JQ_DECK_TOKEN, await stdin()))
       return
     }
     case 'serve': {

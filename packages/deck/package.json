@@ -1,6 +1,6 @@
 {
   "name": "@point-seven-studio/jq-deck",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "One command, one local page: every Claude Code session on your machine, the setup check for each repository, and the mailbox between sessions. Read-only; sends nothing anywhere. Unofficial; not affiliated with or endorsed by Anthropic.",
   "bin": {
     "jq-deck": "dist/jq-deck.mjs"
@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@point-seven-studio/jq-agents": "^0.1.1",
-    "@point-seven-studio/jq-crosstalk": "^0.1.1",
+    "@point-seven-studio/jq-crosstalk": "^0.1.9",
     "@point-seven-studio/jq-groundcrew": "^0.1.2",
     "@types/node": "^20.14.0",
     "esbuild": "^0.21.5",

@@ -21,6 +21,10 @@ On the server:
 
 On each machine that reports:
   JQ_DECK_TOKEN=... jq-deck --watch --exec "jq-deck-server send --url ADDRESS"
+  JQ_DECK_TOKEN=... jq-deck approvals --watch --exec "jq-deck-server approvals --url ADDRESS"
+                    post the approval requests a crosstalk worker is waiting on, which
+                    quote the waiting commands, and print the signed answers. Only a
+                    board that takes them answers; this server's own \`serve\` does not.
 
 The folder comes from --dir or $JQ_DECK_SERVER_DIR. A report holds counts and scores
 per repository: no folder path and no message. What a waiting session asked is in a

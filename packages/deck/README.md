@@ -2,7 +2,7 @@
 
 One command, one local page: every Claude Code session on your machine, the setup check for each repository, and the mailbox between sessions.
 
-It is [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents), [jq-groundcrew](https://www.npmjs.com/package/@point-seven-studio/jq-groundcrew) and [jq-crosstalk](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk) behind one page. It reads what they read. It writes one small note while its page runs, so the other JQ pages can link to it, and nothing else unless you run `jq-deck join`.
+It is [jq-agents](https://www.npmjs.com/package/@point-seven-studio/jq-agents), [jq-groundcrew](https://www.npmjs.com/package/@point-seven-studio/jq-groundcrew) and [jq-crosstalk](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk) behind one page. It reads what they read. It writes one small note while its page runs, so the other JQ pages can link to it, and nothing else unless you run `jq-deck join` or `jq-deck approvals`.
 
 ![The JQ Deck overview: one row per repository with its sessions, setup score and unread mail.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/deck/docs/screenshot.png)
 
@@ -56,7 +56,7 @@ Optional. `~/.jq/config.json`, or the file named by `--config` or `$JQ_DECK_CONF
 - It reads the tail of each session transcript under `~/.claude/projects` and the process table (jq-agents), the Claude Code settings and `CLAUDE.md` files of each repository listed (jq-groundcrew), and the message files in the mailbox (jq-crosstalk). Each tool's README lists exactly what it opens.
 - Each repository on the Overview has an **Open folder in VS Code** link (`vscode://file/...`). It is a link on a page served to this machine, so the path goes nowhere. A session started from the editor is in that window.
 - **`/?find=NAME`** marks the repository of that name. A team board links here that way, because it knows names and never paths. When no repository of that name has a session on this machine, the page says so.
-- It is **read-only**. There is no way to answer a session or send mail from the page.
+- The page is **read-only**. There is no way to answer a session or send mail from it. One separate command, `jq-deck approvals`, writes signed answers into the mailbox, and only when you run it (see Answering a waiting command from elsewhere).
 - **Question text is off by default.** The page says a session is waiting, not what it asked. `--questions DIR,DIR` turns it on for sessions under those folders.
 - **Mail is shown in full** on the Mail tab, to anyone who can open the page on this machine.
 - **Nothing about your sessions leaves your machine** unless you pass `--probe`, which times one connection to `api.anthropic.com` so the Sessions tab can name the network as a bottleneck, or `--watch --exec CMD`, which hands a report to a command of yours (below). Separately, the page asks npm once a day for the latest version number; see [The update check](#the-update-check).
@@ -97,6 +97,34 @@ jq-deck join --url https://deck.example.com --repos shop,api
 **On macOS, a login job cannot read Desktop, Documents or Downloads.** A repository kept there is still reported, but its row may have no git remote and no setup score. `join` tells you when this applies and gives the two ways out: give `node` Full Disk Access in System Settings, or keep the reporter in a terminal.
 
 It must be installed, not run through `npx`: the login job has to find it after a restart. It needs `jq-deck-server` installed too, which is what sends each report; `jq-deck` itself sends no report: its one outbound call is the update check, which a login job never makes.
+
+## Answering a waiting command from elsewhere
+
+From version 0.6.0. A [crosstalk worker](https://www.npmjs.com/package/@point-seven-studio/jq-crosstalk) stops at a command on its ask list, such as `git push`, and waits for a person. `jq-deck approvals` lets that person answer from a board on their phone instead of at this machine.
+
+```sh
+jq-deck approvals trust phone <key>     # once: the board shows the name and the key
+crosstalk worker api --cwd ~/code/api --approver phone
+jq-deck approvals --watch --exec "jq-deck-server approvals --url https://board.example.com/report"
+```
+
+Each pass, it hands the waiting requests to your command, and puts the signed answers your command prints into the mailbox. The worker takes an answer on its next pass.
+
+**It is off unless you run it,** and it changes two things this tool otherwise promises:
+
+- **Text leaves the machine.** A request quotes the command that is waiting, and that text goes to your command. A command that holds a secret puts the secret in it. `jq-deck` and `jq-deck --watch` send none of this.
+- **It writes into the mailbox.** Nothing else in `jq-deck` does.
+
+What it will and will not do:
+
+- It hands over requests only for an approver with a key in `registry/signers.txt`. One with no key is skipped, and it says so: an answer from elsewhere could not be told from a forged one.
+- It writes an answer only when all of these hold: the signature is good for the approver who was asked; the answer replies to a request that is waiting right now; it carries the fingerprint of that request's exact text (`request-sha256:`); and it says approve or deny. Anything else is refused, with the reason on stderr.
+- It checks all of that on this machine. A board that returns something else cannot put it in your mailbox.
+- A request longer than 8,000 characters is not handed over. Answer it on the machine.
+
+**Where the key lives decides what this protects.** The answer is only as trustworthy as the place that holds the signing key. A board that keeps the key in the person's own browser cannot approve anything by itself, and neither can someone who copies its database. A board that holds the key can. Ask which one yours is. `trust` prints the key's fingerprint: check it against the one the board shows before you rely on it.
+
+`trust` will not replace a name's key unless you pass `--replace`, because that changes who can approve.
 
 ## Copy buttons
 

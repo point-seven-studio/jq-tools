@@ -14,6 +14,8 @@
  * `dropped` (a message the worker would not start a run for).
  */
 
+import { createHash } from 'crypto'
+
 export type Ending = 'message' | 'nothing' | 'asked' | 'failed' | 'dropped'
 export const ENDINGS: Ending[] = ['message', 'nothing', 'asked', 'failed', 'dropped']
 
@@ -234,6 +236,26 @@ export function classify(result: RunResult, sent: number): Ending {
   if (!result.ok) return 'failed'
   if (result.deferred) return 'asked'
   return sent > 0 ? 'message' : 'nothing'
+}
+
+/** The line an answer may carry to say which request text its author read. */
+export const REQUEST_DIGEST_KEY = 'request-sha256'
+
+/**
+ * A fingerprint of an approval request's text: SHA-256, in hex, of the message body with the
+ * space around it removed. An answer written somewhere else (a phone, a web page) puts this
+ * in a `request-sha256:` line. The worker then takes the answer only if the request on disk
+ * has the same fingerprint, so an answer given to a different text than the one the run is
+ * waiting on is not an answer. Pure.
+ */
+export function requestDigest(body: string): string {
+  return createHash('sha256').update(body.trim(), 'utf8').digest('hex')
+}
+
+/** The `request-sha256:` value in an answer's body, or null when it carries none. Pure. */
+export function answerDigest(body: string): string | null {
+  const m = body.match(/^request-sha256:\s*([0-9a-f]{64})\s*$/m)
+  return m ? m[1] : null
 }
 
 /** The mail that asks a person to approve one command. */

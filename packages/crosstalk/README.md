@@ -185,6 +185,8 @@ On its next pass the worker resumes the run, and the command runs or is refused.
 
 **How strong an approval is.** If the approver is a signer, only a signed reply counts, and the machine does not hold the key: that is the strong form. If the approver has no key, any session that shares the mailbox could write the answer, and so could the run itself. The worker refuses calls from a run that name its own folder, the signers file, or the `approve`, `deny` and `worker` commands. That check reads the text of the command, so it stops the plain attempt and not a determined one. Use a signer for anything that matters.
 
+**An answer can name the request it read.** From 0.1.9, an answer may carry a line `request-sha256: <fingerprint>`, the SHA-256 of the request's text. The worker then takes the answer only if the request on disk has that fingerprint. A tool that shows the request somewhere else, such as a phone, adds the line, so an approval given to one text cannot be used for another. An answer with no such line is read as before.
+
 **Two limits that come from Claude Code.** A command can be put aside only when it is the one tool call in its turn. If the agent makes several calls at once, Claude Code ignores the request to wait and applies your own permission rules to the command. So do not put a command in your allow rules that is also in `ask.txt`. And the request quotes the command, so a command that holds a secret puts the secret in a message.
 
 ### How a run ended
