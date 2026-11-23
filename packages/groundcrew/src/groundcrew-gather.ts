@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import os from 'os'
 import path from 'path'
-import { findRestrictedCommands, findUnattendedRuns, packageOf, type McpPackage, type MemoryFile, type RestrictedCommand, type SettingsFile, type SetupFacts } from './groundcrew-core.js'
+import { findRestrictedCommands, findUnattendedRuns, memoryFolder, packageOf, type McpPackage, type MemoryFile, type RestrictedCommand, type SettingsFile, type SetupFacts } from './groundcrew-core.js'
 
 const SECRET_NAMES = /^(\.env(\..+)?|secrets?(\..+)?|credentials(\..+)?|.*\.pem|id_rsa)$/i
 const NOT_SECRET = /\.(example|sample|template)$/i
@@ -226,13 +226,23 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
   if (runFiles.length) filesRead.push(`${runFiles.length} workflow, package-script and shell-script ${runFiles.length === 1 ? 'file' : 'files'} (for claude -p and the GitHub action)`)
 
   const encoded = project.replace(/[^a-zA-Z0-9]/g, '-')
+  // The auto memory folder: file names are read to compare them with the index, and only counts are kept.
+  const memoryDir = path.join(configDir(), 'projects', encoded, 'memory')
+  const memoryIndexFile = path.join(memoryDir, 'MEMORY.md')
+  let memoryNames: string[] = []
+  try {
+    memoryNames = readdirSync(memoryDir).filter((name) => isMarkdown(name))
+  } catch {
+    /* no memory folder for this project */
+  }
   return {
     filesRead,
     facts: {
       platform: process.platform,
       memory,
       ruleFiles: countFiles(path.join(project, '.claude', 'rules'), isMarkdown) + countFiles(path.join(configDir(), 'rules'), isMarkdown),
-      autoMemoryIndex: memoryFile(path.join(configDir(), 'projects', encoded, 'memory', 'MEMORY.md'), false),
+      autoMemoryIndex: memoryFile(memoryIndexFile, false),
+      autoMemoryFolder: memoryFolder(existsSync(memoryIndexFile) ? readFileSync(memoryIndexFile, 'utf-8') : null, memoryNames),
       settings,
       skills: {
         project: countFiles(path.join(project, '.claude', 'skills'), (name) => name === 'SKILL.md'),
