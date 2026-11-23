@@ -5,10 +5,10 @@
  * filesystem and a local HTTP server. It imports no database client and makes no
  * outbound call.
  */
-import { existsSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { createServer } from 'http'
 import path from 'path'
-import { FAIL_ON_LEVELS, failing, layerSummary, runChecks, summarize, type FailOn } from './groundcrew-core.js'
+import { FAIL_ON_LEVELS, compareChecks, comparisonLine, failing, layerSummary, parseBaseline, runChecks, summarize, type Baseline, type Comparison, type FailOn } from './groundcrew-core.js'
 import { canRead, gather, tilde } from './groundcrew-gather.js'
 import { renderPage, type Report } from './groundcrew-page.js'
 import { LAMP_PATH, lampReply, announce, readRunning, readTeamUrl, toolbar } from './presence.js'
@@ -16,10 +16,27 @@ import { startUpdateCheck } from './update-check.js'
 
 export const DEFAULT_PORT = 4317
 
-export function report(project: string): Report {
+export function report(project: string, baseline: Baseline | null = null): Report {
   const { facts, filesRead } = gather(project)
   const checks = runChecks(facts)
-  return { project: tilde(project), generatedAt: new Date().toLocaleString('en-US'), filesRead, checks, summary: summarize(checks), layers: layerSummary(checks) }
+  const result: Report = { project: tilde(project), generatedAt: new Date().toLocaleString('en-US'), filesRead, checks, summary: summarize(checks), layers: layerSummary(checks) }
+  if (baseline) result.since = compareChecks(baseline, checks)
+  return result
+}
+
+/** Read the earlier report --since names. Throws a sentence that names the file. */
+export function readBaseline(file: string): Baseline {
+  let text: string
+  try {
+    text = readFileSync(file, 'utf-8')
+  } catch {
+    throw new Error(`cannot read the earlier report: ${file}`)
+  }
+  try {
+    return parseBaseline(text)
+  } catch (error: any) {
+    throw new Error(`${file}: ${error.message}`)
+  }
 }
 
 export interface Parsed {
@@ -27,11 +44,13 @@ export interface Parsed {
   flags: Set<string>
   html: string | null
   port: number
-  /** With --json or --html: exit 1 when a check is at this level or worse. */
-  failOn: FailOn | null
+  /** With --json or --html: exit 1 when a check is at this level or worse. `worse` needs --since: exit 1 when a check is worse than it was. */
+  failOn: FailOn | 'worse' | null
+  /** An earlier `--json` report to compare with. */
+  since: string | null
 }
 
-/** Read the arguments. Options that take a value are --html <file>, --port <number> and --fail-on <fail|warn>. */
+/** Read the arguments. Options that take a value are --html <file>, --port <number>, --since <file> and --fail-on <fail|warn|worse>. */
 export function parseArgs(args: string[], defaultProject: string): Parsed {
   const valueAfter = (flag: string) => {
     const at = args.indexOf(flag)
@@ -40,24 +59,32 @@ export function parseArgs(args: string[], defaultProject: string): Parsed {
   const html = valueAfter('--html')
   const port = valueAfter('--port')
   const failOn = valueAfter('--fail-on')
+  const since = valueAfter('--since')
+  if (since && (!since.value || since.value.startsWith('--'))) throw new Error('--since needs the file of an earlier report: jq-groundcrew --json > before.json')
   if (html && (!html.value || html.value.startsWith('--'))) throw new Error('--html needs a file name')
   const portNumber = port ? Number(port.value) : DEFAULT_PORT
   if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) throw new Error('--port needs a number from 1 to 65535')
-  if (failOn && !FAIL_ON_LEVELS.includes(failOn.value as FailOn)) throw new Error('--fail-on needs fail or warn')
+  if (failOn && failOn.value !== 'worse' && !FAIL_ON_LEVELS.includes(failOn.value as FailOn)) throw new Error('--fail-on needs fail, warn or worse')
+  if (failOn?.value === 'worse' && !since) throw new Error('--fail-on worse needs --since and an earlier report to compare with')
   if (failOn && !html && !args.includes('--json')) throw new Error('--fail-on works with --json or --html, not with the page server')
-  const taken = new Set([html?.at, port?.at, failOn?.at].filter((at): at is number => at !== undefined).map((at) => at + 1))
+  const taken = new Set([html?.at, port?.at, failOn?.at, since?.at].filter((at): at is number => at !== undefined).map((at) => at + 1))
   const dir = args.find((arg, i) => !arg.startsWith('--') && !taken.has(i))
   const project = path.resolve(dir || defaultProject)
   if (!existsSync(project) || !canRead(project)) throw new Error(`cannot read the folder: ${project}`)
-  return { project, flags: new Set(args.filter((arg) => arg.startsWith('--'))), html: html?.value ?? null, port: portNumber, failOn: (failOn?.value as FailOn) ?? null }
+  return { project, flags: new Set(args.filter((arg) => arg.startsWith('--'))), html: html?.value ?? null, port: portNumber, failOn: (failOn?.value as FailOn | 'worse') ?? null, since: since ? path.resolve(since.value) : null }
 }
 
 /**
  * The exit code for --fail-on, with one line per counted check on stderr, so stdout stays the
  * report alone and a CI log still says what failed.
  */
-export function exitCodeFor(checks: Report['checks'], failOn: FailOn | null): number {
+export function exitCodeFor(checks: Report['checks'], failOn: FailOn | 'worse' | null, since: Comparison | null = null): number {
   if (!failOn) return 0
+  if (failOn === 'worse') {
+    // A check that is new since the earlier report is not counted: a newer Groundcrew adds checks.
+    for (const change of since?.worse ?? []) console.error(`groundcrew: worse: ${change.title} (${change.before} to ${change.after})`)
+    return since?.worse.length ? 1 : 0
+  }
   const counted = failing(checks, failOn)
   for (const check of counted) console.error(`groundcrew: ${check.status}: ${check.title}`)
   return counted.length ? 1 : 0
@@ -69,16 +96,21 @@ export function exitCodeFor(checks: Report['checks'], failOn: FailOn | null): nu
  */
 export function runLocal(parsed: Parsed, version = 'dev'): number {
   const { project } = parsed
+  // Read once, so a broken file stops the command at the start and not on the first page load.
+  const baseline = parsed.since ? readBaseline(parsed.since) : null
   if (parsed.flags.has('--json')) {
-    const result = report(project)
+    const result = report(project, baseline)
     console.log(JSON.stringify(result, null, 2))
-    return exitCodeFor(result.checks, parsed.failOn)
+    // On stderr, so stdout stays the report alone.
+    if (result.since) console.error(`groundcrew: since the earlier report: ${comparisonLine(result.since)}`)
+    return exitCodeFor(result.checks, parsed.failOn, result.since ?? null)
   }
   if (parsed.html) {
-    const result = report(project)
+    const result = report(project, baseline)
     writeFileSync(parsed.html, renderPage(result))
     console.log(`wrote ${parsed.html}`)
-    return exitCodeFor(result.checks, parsed.failOn)
+    if (result.since) console.error(`groundcrew: since the earlier report: ${comparisonLine(result.since)}`)
+    return exitCodeFor(result.checks, parsed.failOn, result.since ?? null)
   }
   // Only here, where a person has started the page. --json and --html never ask.
   const update = startUpdateCheck('@point-seven-studio/jq-groundcrew', version, { say: (line) => console.log(`jq-groundcrew: ${line}`) })
@@ -94,7 +126,7 @@ export function runLocal(parsed: Parsed, version = 'dev'): number {
       return
     }
     // Every request reads the files again, so a refresh shows a change at once.
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(renderPage(report(project), toolbar({ here: 'groundcrew', running: readRunning(), team: readTeamUrl(), update: update(), copy: true })))
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(renderPage(report(project, baseline), toolbar({ here: 'groundcrew', running: readRunning(), team: readTeamUrl(), update: update(), copy: true })))
   }).listen(parsed.port, '127.0.0.1', () => {
     // Tell the other JQ pages on this machine where this one is, until it stops.
     announce('groundcrew', parsed.port)

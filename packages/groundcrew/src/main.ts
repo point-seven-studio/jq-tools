@@ -25,6 +25,10 @@ number; --no-update-check turns that off.
   jq-groundcrew --port NUMBER          serve on another port
   jq-groundcrew --json --fail-on fail  exit 1 if a check fails, for CI
                                        (--fail-on warn also counts a warning)
+  jq-groundcrew --json > before.json   keep a report, then after a change:
+  jq-groundcrew --since before.json    show what changed since it
+  jq-groundcrew --json --since before.json --fail-on worse
+                                       exit 1 if a check is worse than it was
 
 The folder defaults to the one you are in. It reads settings files, counts lines in CLAUDE.md
 files, and lists the names of skills, subagents, MCP servers and files that usually hold

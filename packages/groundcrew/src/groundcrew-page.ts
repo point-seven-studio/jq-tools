@@ -10,7 +10,7 @@
  * never color alone: each row has an icon and a word. Light and dark follow the system.
  */
 import { COPY_CSS, COPY_SCRIPT_TAG, TOOLBAR_CSS } from './presence.js'
-import { LAYERS, RISK_NOTE, layerSummary, type Check, type Group, type LayerSummary, type Status, type Summary } from './groundcrew-core.js'
+import { LAYERS, RISK_NOTE, layerSummary, type Check, type Comparison, type StatusChange, type Group, type LayerSummary, type Status, type Summary } from './groundcrew-core.js'
 
 export interface Report {
   project: string
@@ -20,6 +20,8 @@ export interface Report {
   summary: Summary
   /** One row per harness layer. The page works it out from `checks`; it is here for --json. */
   layers?: LayerSummary[]
+  /** What changed since an earlier report, when --since named one. */
+  since?: Comparison
 }
 
 const esc = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -74,6 +76,26 @@ var t=document.getElementById(b.getAttribute('data-copy')).textContent;
 function done(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1600)}
 function old(){var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();done()}
 if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(done,old)}else{old()}});`
+
+const sinceRow = (c: StatusChange) =>
+  `<li>${c.after ? dot(c.after) : ''}${esc(c.title)}<span class="mut">${c.before ? STATUS[c.before].word : 'not there'} → ${c.after ? STATUS[c.after].word : 'not there'}</span></li>`
+
+/** The section for --since: the score then and now, and each check that moved. */
+function sinceSection(c: Comparison): string {
+  const list = (title: string, rows: StatusChange[]) => (rows.length ? `<h3>${title}</h3><ul class="todo">${rows.map(sinceRow).join('')}</ul>` : '')
+  const moved = c.worse.length + c.better.length + c.other.length + c.added.length + c.removed.length
+  return (
+    `<h2>Since the earlier report</h2><p class="mut">${c.readBefore ? `It was read ${esc(c.readBefore)}. ` : ''}` +
+    `Then ${c.scoreBefore}% of checks passed. Now ${c.scoreAfter}% do. ${c.same} ${c.same === 1 ? 'check is' : 'checks are'} the same.</p>` +
+    (moved ? '' : '<p class="mut">No check changed.</p>') +
+    list('Worse', c.worse) +
+    list('Better', c.better) +
+    list('Changed', c.other) +
+    list('New checks', c.added) +
+    list('Checks that are gone', c.removed) +
+    '<p class="mut">This compares the setup. It does not show whether sessions now go better.</p>'
+  )
+}
 
 const dot = (status: Status) => `<span class="dot s-${status}" aria-hidden="true">${STATUS[status].icon}</span>`
 const sourceLink = (check: Check) =>
@@ -154,6 +176,7 @@ export function renderPage(report: Report, toolsBar = ''): string {
     `<div class="tile"><b>${summary.fail}</b><span>to fix</span></div><div class="tile"><b>${summary.warn}</b><span>to look at</span></div>` +
     `<div class="tile"><b>${summary.pass}</b><span>good</span></div><div class="tile"><b>${summary.score}%</b><span>of ${judged} checks pass</span></div></div>` +
     `<div class="bar" role="img" aria-label="${summary.fail} to fix, ${summary.warn} to look at, ${summary.pass} good">${bar}</div>` +
+    (report.since ? sinceSection(report.since) : '') +
     todo +
     layerPanel(report.checks) +
     groups +
