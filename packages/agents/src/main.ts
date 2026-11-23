@@ -11,6 +11,11 @@ const HELP = `JQ Agents ${VERSION}: what every Claude Code session on this machi
   jq-agents --json                 print one snapshot
   jq-agents --watch --exec CMD     every interval, pipe a snapshot (JSON) to CMD
         --interval SECONDS         for --watch (default 60)
+  jq-agents --week                 print where this week's usage went, by repository,
+                                   model and session (the page is at /week)
+        --week-resets "sun 06:00" --week-reading 12
+                                   save when your week resets and what your usage page
+                                   shows now, so figures can be given as percent of it
   jq-agents --questions DIR,DIR    show the question a waiting session asked, for
                                    sessions under these folders (default: none)
   jq-agents --probe                also time a connection to the API host
@@ -22,7 +27,8 @@ const HELP = `JQ Agents ${VERSION}: what every Claude Code session on this machi
 
 It reads session transcripts under ~/.claude/projects and the process table. It is
 read-only: it never writes into a session. The one file it writes is its own
-config, when you correct a label on the board. Nothing about a session leaves this machine unless
+config, when you correct a label on the board or save your week settings.
+Nothing about a session leaves this machine unless
 you pass --exec (your command gets the snapshot) or --probe (one timed connection).
 
 When you open the page it asks npm once a day for the latest version number;

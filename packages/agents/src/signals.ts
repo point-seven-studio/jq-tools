@@ -16,6 +16,10 @@
  *
  * Pure: the caller supplies records and the clock. signals-read.ts does the file work.
  */
+import { estimateUsd } from './prices.js'
+
+/** Five minutes: the grain of `FileState.spend`, fine enough to cut a week at the hour it resets. */
+const SPEND_SLOT_MS = 5 * 60_000
 
 export interface Tokens {
   input: number
@@ -92,9 +96,20 @@ export interface FileState {
   /** Tokens the newest request carried in, which is how full the context was. */
   context: number
   contextAt: number
+  /**
+   * A list-price estimate of each reply (prices.ts), added up by five-minute slot, working
+   * folder, model and whether a subagent made it: `${slot}\n${cwd}\n${model}\n${0|1}`.
+   * `unpriced` counts replies from a model with no price row; they add nothing to `usd`.
+   * week.ts reads this. An estimate, never a bill.
+   */
+  spend: Map<string, { usd: number; requests: number; unpriced: number }>
+  /** The session this file belongs to. A subagent's file names its parent's. */
+  sessionId: string
+  /** The first time seen in the file. */
+  firstTs: number
 }
 
-export const emptyFileState = (): FileState => ({ buckets: new Map(), toolNames: new Map(), lastTs: 0, lastCwd: '', promptAt: null, lastCost: 0, context: 0, contextAt: 0 })
+export const emptyFileState = (): FileState => ({ buckets: new Map(), toolNames: new Map(), lastTs: 0, lastCwd: '', promptAt: null, lastCost: 0, context: 0, contextAt: 0, spend: new Map(), sessionId: '', firstTs: 0 })
 
 /** Samples kept per bucket for a median. Past this the newest replace the oldest. */
 const MAX_SAMPLES = 2000
@@ -147,6 +162,8 @@ export function addRecord(state: FileState, o: any, seen: Set<string>): void {
   if (typeof o.cwd === 'string' && o.cwd) state.lastCwd = o.cwd
   const ts = state.lastTs
   if (!ts) return
+  if (!state.firstTs) state.firstTs = ts
+  if (!state.sessionId && typeof o.sessionId === 'string') state.sessionId = o.sessionId
   const key = `${dayOf(ts)}\n${state.lastCwd}`
   let b = state.buckets.get(key)
   const bucket = () => {
@@ -200,6 +217,13 @@ export function addRecord(state: FileState, o: any, seen: Set<string>): void {
       B.tokens.cacheWrite += num(u.cache_creation_input_tokens)
       B.tokens.thinking += num(u.output_tokens_details?.thinking_tokens)
       const model = typeof m.model === 'string' && m.model ? m.model : 'unknown'
+      const price = estimateUsd(model, u)
+      const slot = `${Math.floor(ts / SPEND_SLOT_MS)}\n${state.lastCwd}\n${model}\n${o.isSidechain ? 1 : 0}`
+      const spent = state.spend.get(slot) ?? { usd: 0, requests: 0, unpriced: 0 }
+      spent.requests++
+      if (price === null) spent.unpriced++
+      else spent.usd += price
+      state.spend.set(slot, spent)
       const mm = (B.models[model] ??= { requests: 0, output: 0 })
       mm.requests++
       mm.output += num(u.output_tokens)

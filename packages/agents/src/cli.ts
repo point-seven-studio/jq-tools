@@ -20,12 +20,14 @@ import { randomBytes } from 'crypto'
 import { writeFileSync } from 'fs'
 import { createServer, type IncomingMessage } from 'http'
 import { snapshot, type Snapshot } from './collect.js'
-import { defaultConfigFile, readQuestionTrees, readTurnCheckConfig, writeQuestionTrees, writeTurnCheckConfig } from './config.js'
+import { defaultConfigFile, readQuestionTrees, readTurnCheckConfig, readWeekConfig, writeQuestionTrees, writeTurnCheckConfig, writeWeekConfig } from './config.js'
 import { applyQuestionsAction, parseQuestionsAction } from './questions.js'
 import { renderPage } from './page.js'
 import { WINDOWS, renderSignals } from './signals-page.js'
 import { createSignalsReader } from './signals-read.js'
 import { readWorkerRuns } from './worker-runs.js'
+import { parseResets, type WeekConfig } from './week.js'
+import { renderWeek, weekText } from './week-page.js'
 import { COPY_SCRIPT_CSP, LAMP_PATH, announce, lampReply, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { startUpdateCheck } from './update-check.js'
 import { applyAction, parseAction } from './turn-check.js'
@@ -49,6 +51,12 @@ export interface Args {
   /** Whether the served page offers forms that save corrections. */
   manage: boolean
   configFile: string
+  /** Print where the week's usage went, and stop. */
+  week: boolean
+  /** When the week resets, as the usage page says it: "sun 06:00". Saved. */
+  weekResets: string | null
+  /** What the usage page shows right now, in percent. Saved with the time. */
+  weekReading: number | null
 }
 
 const list = (s: string | undefined) => (s || '').split(',').map((x) => x.trim()).filter(Boolean)
@@ -69,6 +77,9 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     maxAgeDays: Number(env.JQ_AGENTS_MAX_AGE_DAYS) || 3,
     manage: true,
     configFile: env.JQ_CONFIG || defaultConfigFile(),
+    week: false,
+    weekResets: null,
+    weekReading: null,
   }
   const value = (i: number, flag: string) => {
     const v = argv[i + 1]
@@ -91,6 +102,9 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
     else if (f === '--port') a.port = Number(value(i++, f))
     else if (f === '--questions') a.questionTrees = list(value(i++, f))
     else if (f === '--max-age-days') a.maxAgeDays = Number(value(i++, f))
+    else if (f === '--week') a.week = true
+    else if (f === '--week-resets') a.weekResets = value(i++, f)
+    else if (f === '--week-reading') a.weekReading = Number(value(i++, f))
     else if (f === '--no-update-check') continue // read by update-check.ts
     else throw new Error(`unknown option: ${f}`)
   }
@@ -99,6 +113,10 @@ export function parseArgs(argv: string[], env: Record<string, string | undefined
   if (!(a.maxAgeDays > 0)) throw new Error('--max-age-days needs a number above 0')
   if (!Number.isInteger(a.signalsDays) || a.signalsDays < 1 || a.signalsDays > 90) throw new Error('--days needs a whole number from 1 to 90')
   if (a.signals && !a.json) throw new Error('--signals goes with --json (the page is at /signals when you run jq-agents)')
+  if ((a.weekResets !== null || a.weekReading !== null) && !a.week) throw new Error('--week-resets and --week-reading go with --week')
+  if (a.weekResets !== null && !parseResets(a.weekResets)) throw new Error('--week-resets needs a weekday and a time, as your usage page shows them: "sun 06:00"')
+  if (a.weekReading !== null && !(a.weekReading >= 0.1 && a.weekReading <= 100)) throw new Error('--week-reading needs the percent your usage page shows, from 0.1 to 100')
+  if (a.week && (a.watch || a.signals || a.html)) throw new Error('--week prints its own report: use it alone, or with --json')
   if (a.watch && !a.exec) throw new Error('--watch needs --exec CMD (what should receive each snapshot?)')
   if (a.exec && !a.watch && !a.json) throw new Error('--exec goes with --watch')
   return a
@@ -153,6 +171,16 @@ function readForm(req: IncomingMessage): Promise<Record<string, string> | null> 
   })
 }
 
+/**
+ * The week settings after the flags are applied. A reading needs a reset time to mean
+ * anything, so it is refused without one, here or already saved.
+ */
+export function saveWeek(config: WeekConfig, a: Pick<Args, 'weekResets' | 'weekReading'>, now: number): WeekConfig {
+  const resets = a.weekResets !== null ? parseResets(a.weekResets) : config.resets
+  if (a.weekReading !== null && !resets) throw new Error('say when your week resets too: --week-resets "sun 06:00"')
+  return { resets, reading: a.weekReading !== null ? { percent: a.weekReading, at: now } : config.reading }
+}
+
 /** Pipe one snapshot to the user's command. Resolves with its exit code. */
 function hand(cmd: string, snap: Snapshot): Promise<number> {
   return new Promise((resolve) => {
@@ -182,6 +210,17 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
     await tick()
     console.log(`jq-agents: watching every ${a.intervalS}s (Ctrl-C to stop)`)
     setInterval(tick, a.intervalS * 1000)
+    return
+  }
+  if (a.week) {
+    const now = Date.now()
+    let config = readWeekConfig(a.configFile)
+    if (a.weekResets !== null || a.weekReading !== null) {
+      config = saveWeek(config, a, now)
+      writeWeekConfig(config, a.configFile)
+    }
+    const view = await createSignalsReader().week(config, now)
+    console.log(a.json ? JSON.stringify(view, null, 2) : weekText(view))
     return
   }
   if (a.json && a.signals) {
@@ -259,6 +298,12 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
         const result = await signals.read(WINDOWS.includes(asked) ? asked : 7)
         res.writeHead(200, headers)
         res.end(renderSignals(result, Date.now(), toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() }), url.searchParams.get('open') === 'all', readWorkerRuns(WINDOWS.includes(asked) ? asked : 7)))
+        return
+      }
+      if (url.pathname === '/week') {
+        const view = await signals.week(readWeekConfig(a.configFile))
+        res.writeHead(200, headers)
+        res.end(renderWeek(view, toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() })))
         return
       }
       if (url.pathname !== '/') {

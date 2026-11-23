@@ -1,7 +1,8 @@
 /**
  * JQ Agents: the one file this tool writes.
  *
- * Two keys are this tool's: `turnCheck` and, from the page's own button, `questions`.
+ * Three keys are this tool's: `turnCheck`, `questions` from the page's own button, and `week`
+ * (when a person's week resets and one reading from their usage page; see week.ts).
  *
  * Corrections to the turn check (see turn-check.ts) are kept under the `turnCheck` key of
  * ~/.jq/config.json, the file JQ Deck also reads. Every other key in the file is left as it
@@ -12,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import os from 'os'
 import path from 'path'
 import { parseConfig, type TurnCheckConfig } from './turn-check.js'
+import { parseWeekConfig, weekConfigJson, type WeekConfig } from './week.js'
 
 export function defaultConfigFile(): string {
   return process.env.JQ_CONFIG || path.join(os.homedir(), '.jq', 'config.json')
@@ -65,6 +67,25 @@ export function readTurnCheckConfig(file = defaultConfigFile()): TurnCheckConfig
 export function writeTurnCheckConfig(config: TurnCheckConfig, file = defaultConfigFile()): void {
   const all = readAll(file)
   all.turnCheck = config
+  mkdirSync(path.dirname(file), { recursive: true })
+  const temp = `${file}.${process.pid}.tmp`
+  writeFileSync(temp, JSON.stringify(all, null, 2) + '\n', { mode: 0o600 })
+  renameSync(temp, file)
+}
+
+/** When the week resets and the reading to turn estimates into percent. A missing or unreadable file is neither. */
+export function readWeekConfig(file = defaultConfigFile()): WeekConfig {
+  try {
+    return parseWeekConfig(readAll(file).week)
+  } catch {
+    return parseWeekConfig(null)
+  }
+}
+
+/** Save it. Every other key is left as it was. Throws if the file is not valid JSON. */
+export function writeWeekConfig(config: WeekConfig, file = defaultConfigFile()): void {
+  const all = readAll(file)
+  all.week = weekConfigJson(config)
   mkdirSync(path.dirname(file), { recursive: true })
   const temp = `${file}.${process.pid}.tmp`
   writeFileSync(temp, JSON.stringify(all, null, 2) + '\n', { mode: 0o600 })

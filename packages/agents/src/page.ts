@@ -211,7 +211,7 @@ button:hover{border-color:var(--mut)}button:focus-visible{outline:2px solid var(
 pre{white-space:pre-wrap;word-break:break-word;background:var(--well);margin:8px 0 2px;padding:10px;border-radius:8px;font-size:12px}.q{margin:6px 0 0}
 ${COPY_CSS}${bar ? TOOLBAR_CSS : ''}</style></head><body><main>
 <h1>JQ Agents</h1>
-<p class="mut">${esc(snap.machine)} · read ${esc(snap.generated_at)}. Refresh to read again. Read-only: answer a session where it is running. <a href="/signals">Signals: tokens, errors, latency and cost</a></p>
+<p class="mut">${esc(snap.machine)} · read ${esc(snap.generated_at)}. Refresh to read again. Read-only: answer a session where it is running. <a href="/week">What used my week</a> · <a href="/signals">Signals: tokens, errors, latency and cost</a></p>
 <div class="tot"><div><b>${t.needs_you}</b><span class="mut">waiting on a person</span></div><div><b>${t.abandoned}</b><span class="mut">asked, then left</span></div><div><b>${t.live}</b><span class="mut">live</span></div><div><b>${t.sessions}</b><span class="mut">sessions in ${t.trees} ${t.trees === 1 ? 'tree' : 'trees'}</span></div></div>
 ${chip}
 ${trees || '<p class="mut">No session has been active in the window read.</p>'}
