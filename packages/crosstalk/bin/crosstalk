@@ -20,6 +20,13 @@
 #
 #   crosstalk view [--html FILE | --json]         a local page: waiting, threads, board
 #
+# Mail for later, and a session that is woken by its mail:
+#   crosstalk later <to> "<subject>" --at +2h|+3d|<date> [--every day] [--re <path>] [-f bodyfile]
+#   crosstalk timers | cancel <timer> | due       list them, drop one, deliver what is due
+#   crosstalk worker [<name>] --cwd DIR [--once]  start an agent run for each thread with new mail
+#   crosstalk approve <request> | deny <request>  answer a run that is waiting for a person
+#   crosstalk runs [<name>] [--json]              how the worker's runs ended
+#
 # Signed mail (a sender whose mail must prove who wrote it, such as a person):
 #   crosstalk keygen <name>                       add a signer; prints the private key once
 #   crosstalk verify <path>                       check a message's signature
@@ -43,7 +50,7 @@ PKG="$(cd "$(dirname "$SELF_PATH")/.." && pwd)"
 BOARD="board"
 
 usage() {
-  sed -n '2,30p' "$SELF_PATH" | sed 's/^# \{0,1\}//'
+  sed -n '2,38p' "$SELF_PATH" | sed 's/^# \{0,1\}//'
 }
 
 # ── init ──────────────────────────────────────────────────────────────
@@ -414,6 +421,15 @@ case "${1:-}" in
     mv "$F" "$ROOT/archive/$REC/"
     echo "acked → archive/$REC/$(basename "$F")"
     after
+    ;;
+  later|timers|cancel|due|worker|approve|deny|runs)
+    command -v node >/dev/null 2>&1 || { echo "$1 needs node" >&2; exit 1; }
+    [ -f "$PKG/dist/worker.mjs" ] || { echo "the worker bundle is not built (run: npm run build)" >&2; exit 1; }
+    CMD="$1"; shift
+    # Not exec: the after-hook runs once the command has changed the mailbox.
+    if CROSSTALK_DIR="$ROOT" node "$PKG/dist/worker.mjs" "$CMD" "$ROOT" "$@"; then RC=0; else RC=$?; fi
+    case "$CMD" in later|cancel|due|approve|deny) [ "$RC" != 0 ] || after ;; esac
+    exit "$RC"
     ;;
   view)
     shift

@@ -3,7 +3,7 @@ export * from './board.js'
 export { parseMessage, SETTLED_BY } from './parse.js'
 export { readMailbox, type MailboxMessage } from './read.js'
 export { buildReport } from './view.js'
-export { renderPage, type Report } from './page.js'
+export { renderPage, type Report, type WorkerReport } from './page.js'
 export {
   checkSignature,
   describeCheck,
@@ -19,3 +19,5 @@ export {
   type SignatureState,
   type SignedFields,
 } from './sign.js'
+export { parseTimer, parseWhen, parseEvery, nextDue, type Timer } from './timers.js'
+export { ENDINGS, parseRuns, summarizeRuns, type Ending, type RunRecord, type RunSummary } from './worker.js'

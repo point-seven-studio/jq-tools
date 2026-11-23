@@ -1,6 +1,6 @@
 {
   "name": "@point-seven-studio/jq-crosstalk",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "A file mailbox for agent sessions that work side by side: briefs, questions, threads, and a shared board for questions anyone may answer. Plain files on your machine; sends nothing anywhere.",
   "bin": {
     "crosstalk": "bin/crosstalk"
@@ -17,6 +17,8 @@
     "dist/view.mjs",
     "dist/index.mjs",
     "dist/sign.mjs",
+    "dist/worker.mjs",
+    "dist/hook.mjs",
     "dist/types",
     "README.md",
     "LICENSE",
