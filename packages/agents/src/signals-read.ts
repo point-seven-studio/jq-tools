@@ -11,6 +11,7 @@ import { readdir, stat } from 'fs/promises'
 import path from 'path'
 import { defaultProjectsDir } from './collect.js'
 import { addRecord, emptyFileState, summarize, type FileState, type Signals } from './signals.js'
+import { lastReset, summarizeWeek, type WeekConfig, type WeekView } from './week.js'
 
 interface Held {
   offset: number
@@ -19,6 +20,8 @@ interface Held {
 
 export interface SignalsReader {
   read(days: number, now?: number): Promise<SignalsResult>
+  /** Where the week's usage went (week.ts). Reads the same files, once. */
+  week(config: WeekConfig, now?: number): Promise<WeekView>
 }
 
 export interface SignalsResult {
@@ -104,8 +107,8 @@ export function createSignalsReader(projectsDir = defaultProjectsDir()): Signals
   const names = new Map<string, string>()
   let busy: Promise<unknown> = Promise.resolve()
 
-  const read = async (days: number, now = Date.now()): Promise<SignalsResult> => {
-    const began = Date.now()
+  /** Read what is new in every transcript touched in the last `days` days. Returns the bytes read. */
+  const refresh = async (days: number, now: number): Promise<number> => {
     // Sorted, so a reply copied into a second file is always counted in the same one.
     const files = (await findTranscripts(projectsDir)).sort()
     const cutoff = now - (days + 1) * 86_400_000
@@ -145,18 +148,38 @@ export function createSignalsReader(projectsDir = defaultProjectsDir()): Signals
       }
       held.set(file, cur)
     }
-    const states = [...held.values()].map((h) => h.state)
-    for (const s of states) {
+    for (const h of held.values()) {
+      const s = h.state
       if (s.lastCwd) await folderName(s.lastCwd, names)
       for (const key of s.buckets.keys()) await folderName(key.slice(key.indexOf('\n') + 1), names)
     }
-    return { signals: summarize(states, now, days, (cwd) => names.get(cwd) ?? path.basename(cwd)), files: held.size, bytesRead, tookMs: Date.now() - began }
+    return bytesRead
+  }
+  const nameOf = (cwd: string) => names.get(cwd) ?? path.basename(cwd)
+  const states = () => [...held.values()].map((h) => h.state)
+
+  const read = async (days: number, now = Date.now()): Promise<SignalsResult> => {
+    const began = Date.now()
+    const bytesRead = await refresh(days, now)
+    return { signals: summarize(states(), now, days, nameOf), files: held.size, bytesRead, tookMs: Date.now() - began }
+  }
+
+  const week = async (config: WeekConfig, now = Date.now()): Promise<WeekView> => {
+    // Far enough back for this week, and for the week of the reading when it is an earlier one.
+    const reach = config.resets && config.reading ? Math.min(lastReset(config.reading.at, config.resets), now - 7 * 86_400_000) : now - 7 * 86_400_000
+    await refresh(Math.min(45, Math.ceil((now - reach) / 86_400_000) + 1), now)
+    return summarizeWeek(states(), now, config, nameOf)
   }
 
   return {
     // One read at a time: two page loads at once would both count the same new bytes.
     read: (days, now) => {
       const next = busy.then(() => read(days, now))
+      busy = next.catch(() => {})
+      return next
+    },
+    week: (config, now) => {
+      const next = busy.then(() => week(config, now))
       busy = next.catch(() => {})
       return next
     },

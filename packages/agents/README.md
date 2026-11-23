@@ -79,6 +79,44 @@ Read these with care:
 - **The first page after a start is slow.** Every transcript touched in the window is read whole (about a second per gigabyte on the machine this was measured on), then only what was added.
 - The transcript format is a Claude Code internal. When it changes, a count falls to nothing. That may mean the format moved, not that the thing stopped.
 
+## What used my week
+
+From version 0.1.12. Claude's usage page shows how much of your weekly limit is used. It does not show where it went. This does, for the sessions on this machine: by repository, by model and by session.
+
+```sh
+jq-agents --week          # in a terminal
+```
+
+The same report is a page at `/week` when `jq-agents` is running.
+
+With no setup it covers the last seven days, in shares and in dollars at list price. To see **percent of your week** instead, give it two things from your usage page, once:
+
+```sh
+jq-agents --week --week-resets "sun 06:00" --week-reading 12
+```
+
+- `--week-resets` is the day and time your week resets.
+- `--week-reading` is the percent your usage page shows at the moment you run the command.
+
+It works out what this machine had used by then, divides by your reading, and uses that to turn every figure into percent of your week. You can check it at any time: open your usage page and compare. Give a new reading when they drift apart.
+
+What to trust, in order:
+
+- **Shares.** Which repository or model used the most does not depend on a price being exactly right.
+- **Percent of your week.** As good as your reading, and you can check it.
+- **Dollars.** An estimate at list price, and never a bill. On a Claude subscription nothing is charged per token. On API billing the charge can still differ from this figure.
+
+What it reads and keeps: the token counts Claude Code saves with each reply, the model's name, the folder, and the time. No prompt, reply or command is read for it. Nothing leaves the machine. The two settings are kept under `week` in `~/.jq/config.json`.
+
+Limits:
+
+- **This machine only.** Usage on another computer or in the Claude apps is not in these files. The percent stays right only while those keep the same part of your use that they had at your reading.
+- **Prices are a copy** of [Anthropic's price list](https://platform.claude.com/docs/en/about-claude/pricing) as read on 2026-11-23, inside the package. An old install shows old prices. A model with no price is named on the page and left out of every figure, never counted as free.
+- **Some calls are missed.** Small calls Claude Code makes for itself do not all reach the session files.
+- **Old weeks fade.** Claude Code deletes session files after 30 days by default.
+- **The session files are an internal format** and can change with any Claude Code release.
+- **Checked against one account at one moment.** With a reading of 12%, two independent ways of working out the size of a week agreed to within 1%. That is one data point.
+
 ## Sending snapshots somewhere
 
 For a team board or a history, run it as a relay and give it a command that stores the snapshot:
@@ -152,7 +190,7 @@ On the board, a labelled row has a **Why, and is it wrong?** link. It shows the 
 
 Everything you have corrected is listed at the bottom of the board, each with a button to take it back.
 
-Corrections are saved under the `turnCheck` key of `~/.jq/config.json` (or `--config FILE`), and folders turned on from the page under its `questions` key. It is the only file of yours JQ Agents changes (the other is its own running note, under Links to the other tools), and other keys in it are left as they were. A save is accepted only from the page this process served: the request must name this server, come from this server's own page, and carry a token made when the process started. `--no-manage` serves the board with no forms at all. `--html`, `--json` and `--exec` never include the forms or the command text.
+Corrections are saved under the `turnCheck` key of `~/.jq/config.json` (or `--config FILE`), folders turned on from the page under its `questions` key, and your week settings under `week`. It is the only file of yours JQ Agents changes (the other is its own running note, under Links to the other tools), and other keys in it are left as they were. A save is accepted only from the page this process served: the request must name this server, come from this server's own page, and carry a token made when the process started. `--no-manage` serves the board with no forms at all. `--html`, `--json` and `--exec` never include the forms or the command text.
 
 ### Limits
 

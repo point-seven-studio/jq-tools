@@ -302,7 +302,7 @@ figure details{margin-top:6px}figure summary{display:block;padding:2px 0;font-si
 @media (max-width:520px){.bars th{width:44%}.bars .bar{width:18%}.bars td.mut{display:none}}
 ${bar ? TOOLBAR_CSS : ''}</style></head><body><main>
 <h1>Signals</h1>
-<p class="mut"><a href="/">JQ Agents</a> · counted from the Claude Code transcripts on this machine · ${windows}</p>
+<p class="mut"><a href="/">JQ Agents</a> · <a href="/week">What used my week</a> · counted from the Claude Code transcripts on this machine · ${windows}</p>
 <p class="mut">${count(result.files)} transcript ${result.files === 1 ? 'file' : 'files'} read, as of ${esc(new Date(now).toISOString())}. Counts only: no prompt, reply or command text is kept, and nothing on this page leaves the machine. Reload to count again.</p>
 <p class="nav">Each box opens for its detail. ${nav}</p>
 ${s.requests || s.prompts ? '' : `<p class="card">No session activity recorded in ${span}.</p>`}
