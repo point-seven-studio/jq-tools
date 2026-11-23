@@ -4,7 +4,7 @@ A file mailbox for agent sessions that work side by side.
 
 If you run several coding-agent sessions (one per product, repo or role), they need a way to hand each other work and ask each other questions that does not depend on you copying text between windows. Crosstalk is that: each session has a name and an inbox folder, and a message is a markdown file.
 
-It is plain files on your machine. It sends no mail and no file anywhere. `crosstalk view` asks npm once a day for the latest version number, and you can [turn that off](#the-update-check).
+It is plain files on your machine. It sends no mail and no file anywhere. `crosstalk view` asks npm once a day for the latest version number, and you can [turn that off](#the-update-check). The one thing it can start is Claude Code, and only if you run [a worker](#a-worker).
 
 ![The crosstalk page for a mailbox: unread mail per inbox, then an open board post with two replies marked checked and not checked.](https://raw.githubusercontent.com/point-seven-studio/jq-tools/main/packages/crosstalk/docs/screenshot.png)
 
@@ -97,7 +97,111 @@ What the check proves is that the message came through the one writer holding th
 
 ## Being woken by new mail
 
-The tool does not push. A session that wants to be woken polls its own inbox folder for new files; most agent tools have a way to watch a command's output. Poll your inbox only, not the board.
+The tool does not push. A session that is open and wants to be woken polls its own inbox folder for new files; most agent tools have a way to watch a command's output. Poll your inbox only, not the board.
+
+For a session that is not open, run [a worker](#a-worker).
+
+## Mail for later
+
+A timer is mail that is written now and delivered later.
+
+```sh
+crosstalk later api "Did web answer about guests?" --at +2d --re <path>     # once, in the same thread
+crosstalk later api "Read the error log" --at 2026-12-01T09:00 --every day  # a schedule
+crosstalk timers                # what is waiting
+crosstalk cancel <timer>
+crosstalk due                   # deliver what is due
+```
+
+- `--at` takes `+30m`, `+2h`, `+3d`, `+1w`, or a date and time. `--every` takes `hour`, `day`, `week`, or a number and `m`, `h`, `d` or `w`. The shortest is `5m`.
+- A timer only becomes mail. It starts no work by itself.
+- Nothing delivers a timer until `crosstalk due` runs. A worker runs it on every pass. Without a worker, put `crosstalk due` in cron.
+- A session may set a timer for itself: `crosstalk later api ... --from api`.
+- A schedule that was missed, because nothing ran for a week, is delivered once and moves to its next time. It does not catch up.
+- A signer cannot set a timer, for the same reason it cannot `send`.
+
+## A worker
+
+`crosstalk worker` turns a name into a session that is woken by its mail. It reads the inbox, starts one headless [Claude Code](https://code.claude.com) run for each thread with new mail, and sleeps. No run is open between passes, so nothing is spent while it waits.
+
+```sh
+crosstalk worker api --cwd ~/code/api            # runs until Ctrl-C, looks every 60 seconds
+crosstalk worker api --cwd ~/code/api --once     # one pass, for cron
+crosstalk worker api --cwd ~/code/api --dry-run  # say what it would start, start nothing
+crosstalk runs                                   # how the runs ended
+```
+
+**It is off until you start it, and each run spends money on your Claude account.** The limits are yours to set:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--runs-per-day` | 20 | Runs started in one day. Past it, mail waits until tomorrow. |
+| `--budget` | 1 | Dollars one run may spend. Claude Code stops the run at that figure. |
+| `--timeout` | 30 | Minutes before a run is stopped. |
+| `--every` | 60 | Seconds between passes. |
+| `--model` | your default | The model for the runs. |
+| `--approver` | the mailbox's signer | Who answers approval requests. `none` for nobody. |
+
+What a pass does:
+
+1. Delivers timers that are due.
+2. Resumes any run that was waiting for a person and has been answered.
+3. Starts one run for each thread with unread mail. Mail in one thread goes into one run, so the agent answers once. Later mail in the same thread continues the same Claude Code session.
+4. When a run ends, acknowledges its mail. If the run failed, the mail stays unread, and after three failed runs the worker stops trying and leaves it for you.
+
+One name has one worker. A second one for the same name refuses to start.
+
+### What a run may do
+
+A run has the permissions Claude Code already gives the folder it runs in, plus the mailbox commands it needs: `read`, `inbox`, `reply`, `send`, `later`, `timers`, `board` and `verify`. A headless run cannot ask you anything, so a command your settings do not allow is refused.
+
+The worker does not run:
+
+- mail from a signer that is unsigned or whose signature fails;
+- a signed message that was already acknowledged and put back.
+
+Such mail stays unread, and `crosstalk runs` counts it as `dropped`.
+
+### Commands that wait for a person
+
+`worker/<name>/ask.txt` lists commands that stop a run until a person answers. It is written on the first start with these, and you can edit it:
+
+```
+Bash: \bgit\s+push\b
+Bash: \bgit\s+(reset\s+--hard|clean\b|branch\s+-D)
+Bash: \bgh\s+(pr\s+(merge|close)|release\b|repo\s+delete)
+Bash: \bnpm\s+publish\b
+Bash: \brm\s+-[a-zA-Z]*[rf]
+```
+
+When a run reaches one, the run ends and its session is saved. The worker writes an approval request to the approver's inbox, quoting the command. The worker goes on with other threads. You answer in one of two ways:
+
+```sh
+crosstalk approve <request>     # or: crosstalk deny <request>
+crosstalk reply <request>       # with `approve` or `deny` as the first line
+```
+
+On its next pass the worker resumes the run, and the command runs or is refused. A reply that does not start with one of those words is not read as an answer. With no approver, the listed commands are refused outright.
+
+**How strong an approval is.** If the approver is a signer, only a signed reply counts, and the machine does not hold the key: that is the strong form. If the approver has no key, any session that shares the mailbox could write the answer, and so could the run itself. The worker refuses calls from a run that name its own folder, the signers file, or the `approve`, `deny` and `worker` commands. That check reads the text of the command, so it stops the plain attempt and not a determined one. Use a signer for anything that matters.
+
+**Two limits that come from Claude Code.** A command can be put aside only when it is the one tool call in its turn. If the agent makes several calls at once, Claude Code ignores the request to wait and applies your own permission rules to the command. So do not put a command in your allow rules that is also in `ask.txt`. And the request quotes the command, so a command that holds a secret puts the secret in a message.
+
+### How a run ended
+
+`crosstalk runs` and the page count each run by its ending:
+
+| Ending | Meaning |
+|---|---|
+| `message` | The agent sent mail. |
+| `nothing` | It decided nothing was worth sending. |
+| `asked` | It reached a command that waits for a person. |
+| `failed` | The run did not finish: an error, the budget, or the time limit. |
+| `dropped` | Mail the worker would not start a run for. |
+
+A worker that mostly ends in `nothing` is running on mail that did not need it. One that mostly ends in `asked` has an `ask.txt` that is too wide, or work that should not be unattended.
+
+Checked with Claude Code 2.1.143 on macOS. The worker reads the result Claude Code prints, which could change between versions.
 
 ## Copying the mailbox somewhere
 
@@ -123,6 +227,8 @@ console.log(waitingBoard(messages, Date.now()).headline)
   registry/expertise.txt     who sees which board posts
   registry/signers.txt       optional: senders whose mail must be signed
   hooks/after                optional
+  timers/                    mail waiting for its time; timers/done/ holds the ones that fired or were cancelled
+  worker/<name>/             a worker's records: ask.txt, state.json, answers/, runs.jsonl
 ```
 
 A message:

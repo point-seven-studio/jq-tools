@@ -15,6 +15,8 @@ import { renderPage, type Report } from './page.js'
 import { LAMP_PATH, lampReply, announce, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { startUpdateCheck } from './update-check.js'
 import { readMailbox } from './read.js'
+import { summarizeRuns } from './worker.js'
+import { listTimers, listWorkers, readRuns, readState, workerDir } from './worker-run.js'
 
 export const DEFAULT_PORT = 4318
 const THREADS_SHOWN = 60
@@ -34,7 +36,13 @@ export function buildReport(root: string, now = Date.now()): Report {
   }
   const bodies: Record<string, string> = {}
   for (const m of messages) if (shown.has(m.id)) bodies[m.id] = m.body
-  return { mailbox: root, generated_at: new Date(now).toISOString(), total: messages.length, waiting, board, threads, bodies }
+  const timers = listTimers(root).map((t) => ({ subject: t.subject, from: t.from, to: t.to, due: t.due, every: t.every }))
+  const workers = listWorkers(root).map((name) => {
+    const dir = workerDir(root, name)
+    const asks = Object.entries(readState(dir).waiting).map(([thread, w]) => ({ thread, tool: w.tool, request: w.request, approver: w.approver, asked_at: w.asked_at }))
+    return { name, waiting: asks, runs: summarizeRuns(readRuns(dir), now, 7) }
+  })
+  return { mailbox: root, generated_at: new Date(now).toISOString(), total: messages.length, waiting, board, threads, bodies, timers, workers }
 }
 
 export function parseArgs(args: string[]): { root: string; html: string | null; json: boolean; port: number } {

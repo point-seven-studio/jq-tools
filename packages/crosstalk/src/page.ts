@@ -5,6 +5,7 @@
  */
 import { COPY_CSS, COPY_SCRIPT_TAG, TOOLBAR_CSS } from './presence.js'
 import type { Board, BoardPost, MessageSummary, Thread, WaitingBoard } from './board.js'
+import { ENDINGS, type RunSummary } from './worker.js'
 
 export interface Report {
   mailbox: string
@@ -15,6 +16,16 @@ export interface Report {
   threads: Thread[]
   /** Message id → body, for the messages shown. */
   bodies: Record<string, string>
+  /** Timers waiting to be delivered (timers.ts). Absent from a report made by an older version. */
+  timers?: { subject: string; from: string; to: string; due: string; every: string }[]
+  /** One entry per name a worker has run for (worker.ts). */
+  workers?: WorkerReport[]
+}
+
+export interface WorkerReport {
+  name: string
+  waiting: { thread: string; tool: string; request: string; approver: string; asked_at: string }[]
+  runs: RunSummary
 }
 
 const esc = (s: unknown) =>
@@ -52,6 +63,28 @@ function post(p: BoardPost, bodies: Record<string, string>): string {
   return `<section class="card"><h3>${esc(p.title || '(no title)')} ${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(' ')} <span class="state ${p.state}">${esc(state)}</span></h3>${row(p.post, bodies, p.post.age_days ? `asked ${age(p.post.age_days)} ago` : 'asked today')}${replies}${p.closing ? row(p.closing, bodies, 'closing note') : ''}${p.replies.length === 0 && p.state !== 'closed' ? '<p class="mut">No replies yet.</p>' : ''}</section>`
 }
 
+const ENDED: Record<string, string> = { message: 'sent mail', nothing: 'nothing to send', asked: 'asked a person', failed: 'failed', dropped: 'not run' }
+
+/** Timers and the worker. Empty when the mailbox uses neither, so a mailbox without them looks as it did. */
+function later(r: Report): string {
+  const timers = r.timers ?? []
+  const workers = r.workers ?? []
+  if (!timers.length && !workers.length) return ''
+  const waiting = workers.reduce((n, w) => n + w.waiting.length, 0)
+  const lead = waiting ? `${waiting} ${waiting === 1 ? 'run is' : 'runs are'} waiting for a person.` : workers.length ? 'No run is waiting for a person.' : `${timers.length} ${timers.length === 1 ? 'timer' : 'timers'} waiting.`
+  const cards = workers
+    .map((w) => {
+      const asks = w.waiting.map((a) => `<p class="mut">Waiting for <span class="chip">${esc(a.approver)}</span> since ${esc(a.asked_at)}: a ${esc(a.tool)} call. The request is inbox/${esc(a.approver)}/${esc(a.request)}</p>`).join('')
+      const counts = ENDINGS.map((e) => `${w.runs.by_ending[e]} ${ENDED[e]}`).join(' · ')
+      return `<section class="card"><h3>${esc(w.name)} worker <span class="note">last ${w.runs.days} days: ${counts}${w.runs.cost_usd ? ` · $${w.runs.cost_usd.toFixed(2)}` : ''}</span></h3>${asks}</section>`
+    })
+    .join('')
+  const list = timers.length
+    ? `<section class="card"><h3>Timers <span class="note">${timers.length} waiting</span></h3>${timers.map((t) => `<p class="mut"><span class="chip">${esc(t.from)}</span> to <span class="chip">${esc(t.to)}</span> ${esc(t.subject)} · due ${esc(t.due)}${t.every ? ` · every ${esc(t.every)}` : ''}</p>`).join('')}</section>`
+    : ''
+  return `<h2>Worker and timers</h2><p class="lead">${esc(lead)}</p>${cards}${list}`
+}
+
 /** `bar` is the links to the other tools (presence.ts `toolbar`), or '' for a page with none, such as one shown inside JQ Deck. */
 export function renderPage(r: Report, bar = ''): string {
   const waiting = r.waiting.inboxes
@@ -86,6 +119,7 @@ ${bar ? TOOLBAR_CSS + COPY_CSS : ''}</style></head><body><main>
 <h1>Crosstalk</h1>
 <p class="note">${esc(r.mailbox)} · ${r.total} messages · read ${esc(r.generated_at)}. Refresh to read again. This page is read-only.</p>
 <h2>Waiting</h2><p class="lead">${esc(r.waiting.headline)}</p>${waiting}
+${later(r)}
 <h2>Board</h2><p class="lead">${esc(r.board.headline)}</p>${r.board.open.map((p) => post(p, r.bodies)).join('')}
 ${r.board.closed.length ? `<details class="card"><summary>${r.board.closed.length} closed</summary>${r.board.closed.map((p) => post(p, r.bodies)).join('')}</details>` : ''}
 <h2>Threads</h2><p class="note">The ${r.threads.length} with the newest activity. Where a message carries no thread id, threads are worked out from replies that cite a message or reuse its subject, so some related mail shows as separate.</p>${threads}
