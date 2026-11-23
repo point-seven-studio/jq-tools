@@ -25,6 +25,7 @@ import { applyQuestionsAction, parseQuestionsAction } from './questions.js'
 import { renderPage } from './page.js'
 import { WINDOWS, renderSignals } from './signals-page.js'
 import { createSignalsReader } from './signals-read.js'
+import { readWorkerRuns } from './worker-runs.js'
 import { COPY_SCRIPT_CSP, LAMP_PATH, announce, lampReply, readRunning, readTeamUrl, toolbar } from './presence.js'
 import { startUpdateCheck } from './update-check.js'
 import { applyAction, parseAction } from './turn-check.js'
@@ -184,7 +185,7 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
     return
   }
   if (a.json && a.signals) {
-    console.log(JSON.stringify((await createSignalsReader().read(a.signalsDays)).signals, null, 2))
+    console.log(JSON.stringify({ ...(await createSignalsReader().read(a.signalsDays)).signals, workerRuns: readWorkerRuns(a.signalsDays) }, null, 2))
     return
   }
   if (a.json) {
@@ -257,7 +258,7 @@ export async function run(argv: string[], version = 'dev'): Promise<void> {
         const asked = Number(url.searchParams.get('days'))
         const result = await signals.read(WINDOWS.includes(asked) ? asked : 7)
         res.writeHead(200, headers)
-        res.end(renderSignals(result, Date.now(), toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() }), url.searchParams.get('open') === 'all'))
+        res.end(renderSignals(result, Date.now(), toolbar({ here: 'agents', running: readRunning(), team: readTeamUrl(a.configFile), update: update() }), url.searchParams.get('open') === 'all', readWorkerRuns(WINDOWS.includes(asked) ? asked : 7)))
         return
       }
       if (url.pathname !== '/') {
