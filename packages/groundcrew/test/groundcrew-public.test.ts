@@ -86,8 +86,8 @@ describe('--fail-on, for CI', () => {
     expect(parseArgs(['--json'], tmp).failOn).toBeNull()
   })
   test('refuses a bad level, and refuses the page server, which never exits', () => {
-    expect(() => parseArgs(['--json', '--fail-on', 'info'], tmp)).toThrow('--fail-on needs fail or warn')
-    expect(() => parseArgs(['--json', '--fail-on'], tmp)).toThrow('--fail-on needs fail or warn')
+    expect(() => parseArgs(['--json', '--fail-on', 'info'], tmp)).toThrow('--fail-on needs fail, warn or worse')
+    expect(() => parseArgs(['--json', '--fail-on'], tmp)).toThrow('--fail-on needs fail, warn or worse')
     expect(() => parseArgs(['--fail-on', 'fail'], tmp)).toThrow('--fail-on works with --json or --html')
   })
   test('fail counts fails only; warn counts both; info never counts', () => {
@@ -107,5 +107,23 @@ describe('--fail-on, for CI', () => {
     } finally {
       quiet.mockRestore()
     }
+  })
+})
+
+describe('--since, to compare with an earlier report', () => {
+  const tmp = os.tmpdir()
+  test('takes a file, and --fail-on worse only with it', () => {
+    expect(parseArgs(['--json', '--since', 'before.json', tmp], '/nowhere').since).toBe(path.resolve('before.json'))
+    expect(parseArgs(['--json', '--since', 'before.json', tmp], '/nowhere').project).toBe(path.resolve(tmp))
+    expect(parseArgs(['--json', '--since', 'b.json', '--fail-on', 'worse'], tmp).failOn).toBe('worse')
+    expect(() => parseArgs(['--since'], tmp)).toThrow('--since needs the file')
+    expect(() => parseArgs(['--json', '--fail-on', 'worse'], tmp)).toThrow('--fail-on worse needs --since')
+    expect(() => parseArgs(['--json', '--fail-on', 'never'], tmp)).toThrow('--fail-on needs fail, warn or worse')
+  })
+  test('exits 1 only when a check is worse than it was', () => {
+    const since = (worse: number) => ({ readBefore: '', scoreBefore: 0, scoreAfter: 0, better: [], other: [], added: [{ id: 'n', title: 'New', before: null, after: 'fail' as const }], removed: [], same: 0, worse: Array.from({ length: worse }, (_, i) => ({ id: `w${i}`, title: `W${i}`, before: 'pass' as const, after: 'fail' as const })) })
+    expect(exitCodeFor([], 'worse', since(0))).toBe(0)
+    expect(exitCodeFor([], 'worse', since(2))).toBe(1)
+    expect(exitCodeFor([], 'worse', null)).toBe(0)
   })
 })

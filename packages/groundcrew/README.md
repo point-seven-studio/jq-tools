@@ -41,6 +41,36 @@ Pin the version, so a new check cannot fail your build overnight. Running it onl
 
 Not every check means something in CI. A fresh clone has no `.env` file, because those are ignored by git, so the secrets check passes there whether or not a rule protects them. Run that one on a developer's machine. In CI the useful checks are the ones about files in the repository: `CLAUDE.md` growing past its target, a hook being removed, and a rule that approves every command.
 
+## Before and after a change
+
+From version 0.1.12 you can keep a report and compare a later one with it. Use it when you change `CLAUDE.md`, a rule file, a hook or your settings, to see what the change did to the setup.
+
+```sh
+npx @point-seven-studio/jq-groundcrew --json > before.json
+# ... make the change ...
+npx @point-seven-studio/jq-groundcrew --since before.json
+```
+
+The page gains a section, "Since the earlier report": the share of checks that passed then and now, and each check that got worse, got better, is new or is gone. `--since` also works with `--json` (the report gains a `since` field) and `--html`, and both print one line to stderr:
+
+```
+groundcrew: since the earlier report: score 62 to 75; 2 better, 0 worse, 14 the same
+```
+
+To stop a change that makes the setup worse, keep the report in the repository and compare in CI:
+
+```sh
+npx @point-seven-studio/jq-groundcrew@0.1.12 --json --since groundcrew-baseline.json --fail-on worse
+```
+
+`--fail-on worse` exits with code 1 when a check is worse than it was: pass to warn, pass to fail, or warn to fail. A check that is new since the earlier report is not counted, so a newer Groundcrew with more checks does not fail your build.
+
+Three things to know:
+
+- **It compares the setup, not the work.** A rule can pass every check and still be ignored by the agent. This tells you whether the setup changed, not whether sessions now go better.
+- **Groundcrew keeps nothing.** The earlier report is a file you made and you name. Nothing is saved for you between runs.
+- **A `--json` report names your files.** It lists the settings and instruction files that were read. Think before you commit one to a public repository. `boardSummary()` from the library gives a version with no file name, and `--since` reads that too.
+
 ## As a library
 
 From 0.1.2 the checks can be run from your own code:
@@ -144,7 +174,8 @@ It reads:
 - the names of your skills, subagents, commands and MCP servers;
 - for each MCP server, the package a runner fetches it as, and nothing else of its entry: no other argument and no environment value, since either can hold a key;
 - workflow files, `package.json`, `Makefile`, `justfile` and shell scripts in the project root, `scripts/`, `bin/` and `.claude/scripts/`, for two patterns only (`claude -p` and the GitHub action). Only the file and line of a match are kept;
-- the names of files that usually hold secrets, to tell you whether a rule protects them.
+- the names of files that usually hold secrets, to tell you whether a rule protects them;
+- with `--since`, the earlier report you name.
 
 It never opens a secrets file. It never reads a session transcript. The page lists every file it read.
 

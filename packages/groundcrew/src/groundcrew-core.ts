@@ -1068,6 +1068,97 @@ export function failing(checks: Check[], level: FailOn): Check[] {
   return checks.filter((c) => c.status === 'fail' || (level === 'warn' && c.status === 'warn'))
 }
 
+/** One check whose status is not what it was in the earlier report. */
+export interface StatusChange {
+  id: string
+  title: string
+  /** Null when the earlier report did not have this check. */
+  before: Status | null
+  /** Null when this report does not have it. */
+  after: Status | null
+}
+
+/** What changed between an earlier report and this one. */
+export interface Comparison {
+  /** When the earlier report says it was read, as it wrote it. Empty when it does not say. */
+  readBefore: string
+  scoreBefore: number
+  scoreAfter: number
+  /** Pass to warn, pass to fail, or warn to fail. */
+  worse: StatusChange[]
+  /** Fail to warn, fail to pass, or warn to pass. */
+  better: StatusChange[]
+  /** A change to or from a plain fact, which is neither better nor worse. */
+  other: StatusChange[]
+  /** Checks this report has and the earlier one did not: a newer Groundcrew, or a file that now exists. */
+  added: StatusChange[]
+  /** Checks the earlier report had and this one does not. */
+  removed: StatusChange[]
+  /** Checks in both with the same status. */
+  same: number
+}
+
+/** An earlier report, as much of it as a comparison needs. */
+export interface Baseline {
+  readBefore: string
+  score: number
+  checks: { id: string; title: string; status: Status }[]
+}
+
+const STATUSES: readonly Status[] = ['pass', 'warn', 'fail', 'info']
+const RANK: Record<Status, number> = { pass: 0, warn: 1, fail: 2, info: -1 }
+
+/**
+ * Read an earlier report: the output of `--json`, or of boardSummary(). Throws a sentence a
+ * person can act on when the text is something else. Pure.
+ */
+export function parseBaseline(text: string): Baseline {
+  let data: any
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error('the earlier report is not JSON. Make one with: jq-groundcrew --json > before.json')
+  }
+  if (!data || !Array.isArray(data.checks)) throw new Error('the earlier report has no list of checks. Make one with: jq-groundcrew --json > before.json')
+  const checks = data.checks
+    .filter((c: any) => c && typeof c.id === 'string' && STATUSES.includes(c.status))
+    .map((c: any) => ({ id: c.id as string, title: typeof c.title === 'string' ? c.title : c.id, status: c.status as Status }))
+  if (!checks.length) throw new Error('the earlier report has no check this version can read')
+  const score = typeof data.summary?.score === 'number' ? data.summary.score : typeof data.score === 'number' ? data.score : summarize(checks as Check[]).score
+  return { readBefore: typeof data.generatedAt === 'string' ? data.generatedAt : '', score, checks }
+}
+
+/**
+ * Compare this report's checks with an earlier report's. Pure.
+ *
+ * It says whether the SETUP changed. It cannot say whether the agent now works better: a rule
+ * can pass every check and still be ignored.
+ */
+export function compareChecks(before: Baseline, after: Check[]): Comparison {
+  const was = new Map(before.checks.map((c) => [c.id, c]))
+  const now = new Map(after.map((c) => [c.id, c]))
+  const result: Comparison = { readBefore: before.readBefore, scoreBefore: before.score, scoreAfter: summarize(after).score, worse: [], better: [], other: [], added: [], removed: [], same: 0 }
+  for (const c of after) {
+    const old = was.get(c.id)
+    if (!old) result.added.push({ id: c.id, title: c.title, before: null, after: c.status })
+    else if (old.status === c.status) result.same++
+    else {
+      const change = { id: c.id, title: c.title, before: old.status, after: c.status }
+      if (RANK[old.status] < 0 || RANK[c.status] < 0) result.other.push(change)
+      else if (RANK[c.status] > RANK[old.status]) result.worse.push(change)
+      else result.better.push(change)
+    }
+  }
+  for (const c of before.checks) if (!now.has(c.id)) result.removed.push({ id: c.id, title: c.title, before: c.status, after: null })
+  return result
+}
+
+/** One line for a terminal or a CI log. Pure. */
+export function comparisonLine(c: Comparison): string {
+  const count = (n: number, word: string) => `${n} ${word}`
+  return `score ${c.scoreBefore} to ${c.scoreAfter}; ${count(c.better.length, 'better')}, ${count(c.worse.length, 'worse')}, ${count(c.same, 'the same')}` + (c.added.length ? `, ${count(c.added.length, 'new')}` : '') + (c.removed.length ? `, ${count(c.removed.length, 'gone')}` : '')
+}
+
 export interface BoardCheck {
   id: string
   group: Group

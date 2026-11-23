@@ -476,3 +476,55 @@ describe('the auto memory folder', () => {
     expect(text).toContain('1 link in MEMORY.md points to a note that is not there')
   })
 })
+
+describe('comparing with an earlier report (--since)', () => {
+  const check = (id: string, status: 'pass' | 'warn' | 'fail' | 'info') => ({ id, title: `Title of ${id}`, status })
+  const before = { generatedAt: '11/20/2026, 9:00:00 AM', summary: { score: 50 }, checks: [check('a', 'pass'), check('b', 'warn'), check('c', 'fail'), check('d', 'pass'), check('e', 'info'), check('gone', 'pass')] }
+  const after = [check('a', 'fail'), check('b', 'pass'), check('c', 'warn'), check('d', 'pass'), check('e', 'warn'), check('new', 'fail')] as any
+
+  it('reads a --json report, and a board summary', async () => {
+    const { parseBaseline } = await import('../src/groundcrew-core.js')
+    expect(parseBaseline(JSON.stringify(before))).toMatchObject({ readBefore: '11/20/2026, 9:00:00 AM', score: 50 })
+    expect(parseBaseline(JSON.stringify({ score: 80, checks: [check('a', 'pass')] }))).toMatchObject({ readBefore: '', score: 80 })
+  })
+  it('works out the score when the earlier report does not carry one', async () => {
+    const { parseBaseline } = await import('../src/groundcrew-core.js')
+    expect(parseBaseline(JSON.stringify({ checks: [check('a', 'pass'), check('b', 'fail')] })).score).toBe(50)
+  })
+  it('says what to do about a file that is not a report', async () => {
+    const { parseBaseline } = await import('../src/groundcrew-core.js')
+    expect(() => parseBaseline('<html>')).toThrow('is not JSON')
+    expect(() => parseBaseline('{"a":1}')).toThrow('no list of checks')
+    expect(() => parseBaseline('{"checks":[{"id":"a","status":"splendid"}]}')).toThrow('no check this version can read')
+  })
+  it('sorts each check into worse, better, changed, new, gone or the same', async () => {
+    const { compareChecks, parseBaseline } = await import('../src/groundcrew-core.js')
+    const c = compareChecks(parseBaseline(JSON.stringify(before)), after)
+    expect(c.worse.map((x) => x.id)).toEqual(['a'])
+    expect(c.better.map((x) => x.id)).toEqual(['b', 'c'])
+    expect(c.other.map((x) => x.id)).toEqual(['e'])
+    expect(c.added).toEqual([{ id: 'new', title: 'Title of new', before: null, after: 'fail' }])
+    expect(c.removed).toEqual([{ id: 'gone', title: 'Title of gone', before: 'pass', after: null }])
+    expect(c.same).toBe(1)
+    expect(c.scoreBefore).toBe(50)
+    expect(c.scoreAfter).toBe(summarize(after).score)
+  })
+  it('sums it up in one line', async () => {
+    const { compareChecks, comparisonLine, parseBaseline } = await import('../src/groundcrew-core.js')
+    const c = compareChecks(parseBaseline(JSON.stringify(before)), after)
+    expect(comparisonLine(c)).toBe(`score 50 to ${c.scoreAfter}; 2 better, 1 worse, 1 the same, 1 new, 1 gone`)
+  })
+  it('shows the section on the page only when asked, and says what it cannot show', async () => {
+    const { compareChecks, parseBaseline } = await import('../src/groundcrew-core.js')
+    const checks = runChecks(facts({}))
+    const base = { project: '~/p', generatedAt: 'now', filesRead: [], checks, summary: summarize(checks) }
+    expect(renderPage(base)).not.toContain('Since the earlier report')
+    const same = renderPage({ ...base, since: compareChecks(parseBaseline(JSON.stringify({ checks })), checks) })
+    expect(same).toContain('Since the earlier report')
+    expect(same).toContain('No check changed.')
+    expect(same).toContain('It does not show whether sessions now go better.')
+    const moved = renderPage({ ...base, since: compareChecks(parseBaseline(JSON.stringify(before)), after) })
+    expect(moved).toContain('<h3>Worse</h3>')
+    expect(moved).toContain('Title of a')
+  })
+})
