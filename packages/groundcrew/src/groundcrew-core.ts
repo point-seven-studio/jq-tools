@@ -184,6 +184,26 @@ export function allowsEveryCommand(rule: string): boolean {
   return /^Bash(\(\s*(\*|:\*|\*\*)?\s*\))?$/.test(rule.trim())
 }
 
+/** Programs that send to, or fetch from, any address. The docs name curl and wget; the rest are our own list. */
+const NETWORK_PROGRAMS = ['curl', 'wget', 'nc', 'ncat', 'netcat', 'scp', 'sftp', 'ftp', 'telnet']
+
+/**
+ * An allow rule that lets the agent reach any address without asking: a shell rule for a
+ * network program, such as `Bash(curl *)` or the older `Bash(curl:*)`, or a web fetch rule
+ * for every domain. A fetch rule for one named domain is not one, and neither is a shell rule
+ * with no wildcard: that approves one exact command, such as a health check someone answered
+ * "don't ask again" to. Returns what the rule opens, or null. A blanket shell rule is
+ * `allowsEveryCommand`'s to report, not this one's.
+ */
+export function allowsNetwork(rule: string): string | null {
+  const r = rule.trim()
+  if (/^WebFetch(\(\s*(domain:\s*\*)?\s*\))?$/.test(r)) return 'any address'
+  const shell = r.match(/^Bash\(\s*([^\s:()]+)/)
+  if (!shell || !r.includes('*')) return null
+  const program = shell[1].split('/').pop() as string
+  return NETWORK_PROGRAMS.includes(program) ? program : null
+}
+
 /**
  * Programs whose name at the start of a code span marks the span as a command. A span such as
  * `main` or `CLAUDE.md` is not one, and without this list "never push to `main`" would be read
@@ -509,6 +529,8 @@ function guardrailChecks(facts: SetupFacts): Unprompted[] {
   const bypass = modes.find((m) => m.mode === 'bypassPermissions')
   const loose = modes.find((m) => m.mode === 'dontAsk' || m.mode === 'auto')
   const sandboxOn = files.some((f) => f.sandboxEnabled === true)
+  const network = all(files, (f) => f.allow.filter((rule) => allowsNetwork(rule)).map((rule) => `${rule} in ${f.label}`))
+  const networkShown = network.slice(0, 5).join('; ') + (network.length > 5 ? `; and ${network.length - 5} more` : '')
   const windows = facts.platform === 'win32'
   const reach = files.reduce((sum, f) => sum + f.additionalDirectories, 0)
   const retention = files.map((f) => f.cleanupPeriodDays).find((d) => d !== null) ?? null
@@ -567,6 +589,19 @@ function guardrailChecks(facts: SetupFacts): Unprompted[] {
           : 'The sandbox is off, which is the default. Commands run with your full access to files and the network.',
       fix: sandboxOn || windows ? '' : 'Turn it on with /sandbox, or set "sandbox": { "enabled": true } in settings.',
       source: `${DOCS}/sandboxing.md`,
+    },
+    {
+      id: 'network-ask',
+      group: 'guardrails',
+      title: 'Network commands still ask',
+      status: network.length ? 'warn' : 'pass',
+      detail: network.length
+        ? `These rules let the agent reach any address without asking: ${networkShown}. Text the agent reads, such as a web page or an issue, can carry an instruction. With ${network.length === 1 ? 'this rule' : 'these rules'}, such an instruction could send data out and nothing would ask you.`
+        : 'No allow rule approves a network command or a web request to any address, so those ask first in the standard mode.',
+      fix: network.length
+        ? `Remove ${network.length === 1 ? 'the rule' : 'these rules'}, or replace ${network.length === 1 ? 'it' : 'them'} with a rule for each site you need, such as "WebFetch(domain:docs.example.com)". A shell rule cannot limit which address a command reaches.`
+        : '',
+      source: `${DOCS}/security.md`,
     },
     {
       id: 'reach',
@@ -869,6 +904,12 @@ export function promptFor(check: Unprompted, facts: SetupFacts): string {
         'My Claude Code settings hold an allow rule that approves every shell command. Find it in the settings files, then list the shell commands this project really needs, ' +
         'such as its test, lint and build commands. Propose scoped allow rules for those to replace the blanket rule. Show me the diff before you save it.'
       )
+    case 'network-ask':
+      return (
+        'My Claude Code settings hold allow rules that let you reach any address without asking, such as a rule for curl or a WebFetch rule for every domain. ' +
+        'Find them in the settings files and tell me what each one was added for. Where a rule is for reading a few known sites, propose a WebFetch(domain:...) rule for each site to replace it. ' +
+        'Where it is not needed, propose removing it. Show me the diff before you save it.'
+      )
     case 'sandbox':
       return '/sandbox'
     case 'verify-command':
@@ -910,6 +951,7 @@ export const LAYER_OF: Readonly<Record<string, Layer>> = {
   'broad-allow': 'permissions',
   'default-mode': 'permissions',
   sandbox: 'permissions',
+  'network-ask': 'permissions',
   reach: 'permissions',
   managed: 'permissions',
   'prose-rules': 'permissions',
@@ -954,6 +996,7 @@ export const RISK_OF: Readonly<Record<string, readonly OwaspLlmId[]>> = {
   'broad-allow': ['LLM06'],
   'default-mode': ['LLM06'],
   sandbox: ['LLM06'],
+  'network-ask': ['LLM01', 'LLM06'],
   reach: ['LLM06'],
   'prose-rules': ['LLM06'],
   'subagent-scope': ['LLM06'],

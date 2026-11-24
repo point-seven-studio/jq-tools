@@ -124,7 +124,7 @@ From 0.1.5 the page also sorts the same checks into six layers of an agent's har
 | Sensors | What checks the work | Hooks, and whether the agent can run your checks |
 | Loop | What sends the agent back when the work is not done, and what stops it going round | The Stop hook, and a limit on runs with no person present |
 | Memory | What carries over between sessions | The auto memory index |
-| Permissions | What the agent may and may not do | Secrets, blanket approvals, permission mode, sandbox, reach, subagent tools, rules written in the instructions |
+| Permissions | What the agent may and may not do | Secrets, blanket approvals, network commands approved in advance, permission mode, sandbox, reach, subagent tools, rules written in the instructions |
 | Observability | What a person can see of what the agent did | Transcript retention, as a fact |
 
 Each row on the page also says what Groundcrew does **not** check in that layer, so a row of passes is not read as "covered". Memory and observability have one check each. In `--json` the rows are under `layers`, and each check carries its `layer`.
@@ -135,14 +135,29 @@ From 0.1.8, a check that bears plainly on an entry of the [OWASP Top 10 for LLM 
 
 | Entry | Checks |
 |---|---|
+| LLM01:2025 Prompt Injection | Network commands approved in advance (from 0.1.13) |
 | LLM02:2025 Sensitive Information Disclosure | The deny rule for secret files |
 | LLM03:2025 Supply Chain | MCP servers with no exact version |
-| LLM06:2025 Excessive Agency | Blanket approvals, permission mode, sandbox, reach, rules written in the instructions, subagent tools |
+| LLM06:2025 Excessive Agency | Blanket approvals, network commands approved in advance, permission mode, sandbox, reach, rules written in the instructions, subagent tools |
 | LLM10:2025 Unbounded Consumption | A limit on runs with no person present |
 
-The other six entries have no check here. Groundcrew looks at how Claude Code is set up on one project. It does not look at training data, a model, a retrieval store or an application's own prompts.
+The other five entries have no check here. Groundcrew looks at how Claude Code is set up on one project. It does not look at training data, a model, a retrieval store or an application's own prompts.
 
 **A tag is our reading, not OWASP's, and a pass is not protection.** A pass means one setting is in place. This is not a security review and not a certification. The entry names are copied from the OWASP project's own files; a list from memory or from a shared graphic is easy to get wrong.
+
+## Network commands approved in advance
+
+From 0.1.13. Text an agent reads can carry an instruction: a web page, an issue, an email, a file from someone else. The agent cannot always tell that text from yours. What limits the harm is what it may do without asking.
+
+The Claude Code docs say commands such as `curl` and `wget` "prompt you by default" in the standard mode, and that you can add an allow rule such as `Bash(curl *)`. Groundcrew warns when you have: an allow rule for `curl`, `wget`, `nc`, `ncat`, `netcat`, `scp`, `sftp`, `ftp` or `telnet`, or a web fetch rule for every address (`WebFetch` or `WebFetch(domain:*)`). A fetch rule for a named site passes, and so does a shell rule with no `*` in it, which approves one exact command. The list of programs beyond the first two is our own.
+
+What it does not see:
+
+- **Other ways out.** A script, `git push`, a package manager, an MCP server's own tools. The list is short on purpose, so a warning is rarely wrong.
+- **What the agent reads.** It does not know which of your MCP servers or files bring in text from outside.
+- **A rule added mid-session.** "Yes, and don't ask again" saves an allow rule. Run the check again after a week of work.
+
+A pass here is one closed door. It is not protection from prompt injection.
 
 ## Rules written in the instructions
 
