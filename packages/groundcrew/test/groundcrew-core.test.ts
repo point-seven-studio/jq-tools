@@ -7,7 +7,7 @@
 import { describe, expect, it, test } from 'vitest'
 import { commandStart, findRestrictedCommands, proseFindings, ruleCovers } from '../src/groundcrew-core.js'
 import { findUnattendedRuns, OWASP_LLM_2025, owaspLabel, packageOf, RISK_NOTE, RISK_OF, risksOf } from '../src/groundcrew-core.js'
-import { allowsEveryCommand, boardSummary, deniesSecrets, LAYER_OF, LAYERS, layerSummary, looksLikeACheck, runChecks, summarize, type SettingsFile, type SetupFacts } from '../src/groundcrew-core.js'
+import { allowsEveryCommand, allowsNetwork, boardSummary, deniesSecrets, LAYER_OF, LAYERS, layerSummary, looksLikeACheck, runChecks, summarize, type SettingsFile, type SetupFacts } from '../src/groundcrew-core.js'
 import { renderPage } from '../src/groundcrew-page.js'
 
 const settings = (extra: Partial<SettingsFile> = {}): SettingsFile => ({
@@ -93,6 +93,23 @@ describe('guardrails', () => {
     const check = runChecks(facts({ settings: [settings({ allow: ['Bash(*)'] })] })).find((c) => c.id === 'broad-allow')
     expect(check?.status).toBe('fail')
     expect(check?.detail).toContain('Bash(*) in .claude/settings.json')
+  })
+  test('a rule that approves a network command, or a fetch of any address, is found', () => {
+    for (const rule of ['Bash(curl *)', 'Bash(curl:*)', 'Bash(curl -s https://example.com/ *)', 'Bash(/usr/bin/wget *)', 'Bash(nc *)', 'Bash(scp:*)', 'WebFetch', 'WebFetch(domain:*)']) expect(allowsNetwork(rule), rule).not.toBeNull()
+    for (const rule of ['WebFetch(domain:docs.example.com)', 'WebFetch(domain:*.example.com)', 'Bash(npm test *)', 'Bash(curlew *)', 'Bash(curl -s "https://example.com/health")', 'Bash(git push *)', 'Bash', 'Read(./curl)', 'WebSearch']) expect(allowsNetwork(rule), rule).toBeNull()
+  })
+  test('network commands that are approved in advance warn, name the file, and carry both tags', () => {
+    const open = runChecks(facts({ settings: [settings({ allow: ['Bash(curl *)', 'WebFetch(domain:docs.example.com)'] })] })).find((c) => c.id === 'network-ask')!
+    expect(open.status).toBe('warn')
+    expect(open.detail).toContain('Bash(curl *) in .claude/settings.json')
+    expect(open.detail).not.toContain('docs.example.com')
+    expect(open.prompt).toMatch(/before you save/)
+    expect(open.risks).toEqual(['LLM01:2025 Prompt Injection', 'LLM06:2025 Excessive Agency'])
+    expect(open.layer).toBe('permissions')
+    const many = runChecks(facts({ settings: [settings({ allow: Array.from({ length: 8 }, (_, i) => `Bash(curl https://example.com/${i}/*)`) })] })).find((c) => c.id === 'network-ask')!
+    expect(many.detail).toContain('and 3 more')
+    const shut = runChecks(facts()).find((c) => c.id === 'network-ask')!
+    expect([shut.status, shut.fix, shut.prompt]).toEqual(['pass', '', ''])
   })
   test('the permission mode is graded', () => {
     const mode = (defaultMode: string | null) => status(facts({ settings: [settings({ defaultMode })] }), 'default-mode')
