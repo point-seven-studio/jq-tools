@@ -90,6 +90,7 @@ console.log(summarize(checks))
 
 - The length of each `CLAUDE.md`, against the target in the Claude Code docs of under 200 lines per file.
 - Whether the auto memory index is longer than the part that loads.
+- Whether the project keeps a record of why each rule exists, and whether the instructions name it.
 - Whether any hook is configured.
 - Whether any command is pre-approved.
 - Your skills, subagents, custom commands and MCP servers, as plain facts.
@@ -123,7 +124,7 @@ From 0.1.5 the page also sorts the same checks into six layers of an agent's har
 | Guides | What steers the agent before it works | Instruction file length, skills, custom commands |
 | Sensors | What checks the work | Hooks, and whether the agent can run your checks |
 | Loop | What sends the agent back when the work is not done, and what stops it going round | The Stop hook, and a limit on runs with no person present |
-| Memory | What carries over between sessions | The auto memory index |
+| Memory | What carries over between sessions | The auto memory index, and a record of why each rule exists |
 | Permissions | What the agent may and may not do | Secrets, blanket approvals, network commands approved in advance, permission mode, sandbox, reach, subagent tools, rules written in the instructions |
 | Observability | What a person can see of what the agent did | Transcript retention, as a fact |
 
@@ -158,6 +159,23 @@ What it does not see:
 - **A rule added mid-session.** "Yes, and don't ask again" saves an allow rule. Run the check again after a week of work.
 
 A pass here is one closed door. It is not protection from prompt injection.
+
+## A record of why each rule exists
+
+Instruction files grow one rule at a time, and each rule was added because something went wrong once. The file keeps the rule and loses the reason. A year later, or one model later, nobody can say which rules still earn their place.
+
+Groundcrew looks for a record: a file named like `RULE_LEDGER.md`, `decision-log.md` or `rules-history.md` in the project root, `docs/`, `docs/ai/`, `doc/` or `.claude/`, or one the instructions link to. It reports one of four things:
+
+| Found | Status |
+|---|---|
+| A record with entries, named by an instruction file | pass |
+| A record with entries that no instruction file names | warn: a session changing a rule is never told it is there |
+| No record, or an empty one, and 60 or more lines of project instructions | warn |
+| No record and fewer than 60 lines | a fact only |
+
+**This check is our suggestion, not the Claude Code docs'.** The 60-line mark is ours too. It rests on a research paper, [Self-Improvement Memory Enables Continual Recursive Self-Improvement](https://arxiv.org/abs/2611.18856) (Google Cloud AI and Google DeepMind, November 2026). The paper tested a program that rewrites an agent's setup, moving it to a new model or a new set of tasks. Carrying a log of each change (why, what was expected, what happened, where it was tested) finished higher than carrying the setup alone. Nobody in the paper tested a person editing `CLAUDE.md`, so read the check as a reason to try a record and not as proof it helps.
+
+What it does not see: it knows a record by its file name, so a record under another name is missed, and it counts entries without reading them. A record with thirty rows of "added because needed" passes.
 
 ## Rules written in the instructions
 
