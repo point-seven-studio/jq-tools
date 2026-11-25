@@ -8,7 +8,8 @@
  *
  * Every check rests on a statement in Anthropic's Claude Code documentation, and carries the
  * link, so a reader can verify the advice. The facts were checked against the docs on
- * 2026-11-14. A check that is only our opinion says "our suggestion" in its text.
+ * 2026-11-14. A check that is only our opinion says "our suggestion" in its text. One check,
+ * `rule-record`, rests on a research paper and not on the docs, and says so.
  *
  * Nothing here judges a transcript. The docs say the transcript format "is internal to Claude
  * Code and changes between versions", so session checks are a separate, later piece.
@@ -108,7 +109,46 @@ export interface SetupFacts {
    * did not look.
    */
   unattendedRuns?: UnattendedRun[]
+  /**
+   * A file that records why each rule in the instructions exists. Null when none was found,
+   * absent when a caller did not look.
+   */
+  ruleRecord?: RuleRecord | null
 }
+
+export interface RuleRecord {
+  /** Path from the project root, such as "docs/ai/RULE_LEDGER.md". */
+  label: string
+  /** Rows, sections or list items in it: see recordEntries. */
+  entries: number
+  /** The first instruction file that names it, or null when none does. */
+  linkedFrom: string | null
+}
+
+/** File names taken to be a record of why rules exist: RULE_LEDGER.md, decision-log.md, rule-history.md. */
+const RECORD_NAME = /(^|[-_ .])(ledger|decision[-_ ]?(log|record)s?|rules?[-_ ]?(log|history))\.md$/i
+export const looksLikeRuleRecord = (name: string): boolean => RECORD_NAME.test(name)
+
+/**
+ * How many entries a record holds: the rows of its tables when it has any, or else its
+ * sections below the title, or else its list items. A count, never the text. Pure.
+ */
+export function recordEntries(text: string): number {
+  const lines = text.split('\n').map((l) => l.trim())
+  const divider = (l: string) => /^\|?\s*:?-{2,}/.test(l) && /^[|\s:-]+$/.test(l)
+  let rows = 0
+  lines.forEach((l, i) => {
+    if (l.startsWith('|') && !divider(l) && !divider(lines[i + 1] ?? '')) rows++
+  })
+  if (rows) return rows
+  const sections = lines.filter((l) => /^#{2,6}\s/.test(l)).length
+  return sections || lines.filter((l) => /^([-*]|\d+\.)\s/.test(l)).length
+}
+
+/** Our own line, not the docs': under this many lines of project instructions, no record is only a fact. */
+export const RECORD_WORTH_LINES = 60
+/** Self-Improvement Memory, Google Cloud AI and Google DeepMind, submitted 2026-11-13. */
+const SIM_PAPER = 'https://arxiv.org/abs/2611.18856'
 
 export interface UnattendedRun {
   /** Path from the project root. */
@@ -459,7 +499,44 @@ function memoryChecks(facts: SetupFacts): Unprompted[] {
       checks.push({ ...base, status: 'pass', detail: `All ${plural(folder.files, 'note')} are linked from MEMORY.md.`, fix: '' })
     }
   }
+  if (facts.ruleRecord !== undefined) checks.push(ruleRecordCheck(facts, facts.ruleRecord))
   return checks
+}
+
+/**
+ * Whether the project keeps a record of why its rules exist, and whether a session is told
+ * about it. This is our suggestion: the Claude Code docs do not ask for one.
+ */
+function ruleRecordCheck(facts: SetupFacts, record: RuleRecord | null): Unprompted {
+  const base = { id: 'rule-record', group: 'setup' as const, title: 'A record of why each rule exists', source: SIM_PAPER }
+  const lines = facts.memory.filter((m) => !m.label.startsWith('~')).reduce((sum, m) => sum + m.lines, 0)
+  const entries = (n: number) => `${n} ${n === 1 ? 'entry' : 'entries'}`
+  const row = 'one row for each rule: when it was added, what went wrong, what the rule was expected to fix, what happened after, and what would make it safe to delete'
+  if (record && record.entries && record.linkedFrom) {
+    return { ...base, status: 'pass', detail: `${record.label} holds ${entries(record.entries)}, and ${record.linkedFrom} names it.`, fix: '' }
+  }
+  if (record && record.entries) {
+    return {
+      ...base,
+      status: 'warn',
+      detail: `${record.label} holds ${entries(record.entries)}, and no instruction file names it. A session that changes a rule is never told the record is there.`,
+      fix: `Add a line to the instructions: before adding, changing or removing a rule, read ${record.label}, and add a row for a new rule.`,
+    }
+  }
+  const found = record ? `${record.label} was found and holds no entry` : 'No record of why each rule is there was found'
+  const looked = 'Groundcrew looks in the project root, docs/, docs/ai/ and .claude/ for a file named like RULE_LEDGER.md or decision-log.md, and for a link to one from the instructions.'
+  if (lines < RECORD_WORTH_LINES) {
+    return { ...base, status: 'info', detail: `${found}. The project's instruction files hold ${plural(lines, 'line')}, which is few enough to reread. ${looked}`, fix: '' }
+  }
+  return {
+    ...base,
+    status: 'warn',
+    detail: `${found}. The project's instruction files hold ${plural(lines, 'line')}. When the model changes, nothing says which of them still earn their place. ${looked}`,
+    fix:
+      `Our suggestion, not the docs': keep ${row}. ` +
+      'A 2026 paper from Google found that an automated optimiser moving an agent\'s setup to a new model or a new set of tasks finished higher when it carried such a record than when it carried the setup alone. ' +
+      'That tested a program rewriting a setup, not a person editing CLAUDE.md, so read it as a reason to try this and not as proof.',
+  }
 }
 
 function automationChecks(facts: SetupFacts): Unprompted[] {
@@ -875,6 +952,20 @@ export function promptFor(check: Unprompted, facts: SetupFacts): string {
       return 'The auto memory index MEMORY.md is longer than what loads (the first 200 lines or 25 KB). Read it and propose which entries to merge, shorten or remove so that the ones that matter load. Show me the new index before you save it.'
     case 'auto-memory-folder':
       return 'The notes in this project\'s auto memory folder do not line up with its index, MEMORY.md. List the markdown files in the folder and the links in MEMORY.md. Tell me which notes have no line in the index and which links point to a note that is gone. For each note with no line, read it and say whether to add a line for it or delete it, and why. Show me the new MEMORY.md before you save it, and delete nothing until I approve.'
+    case 'rule-record': {
+      const record = facts.ruleRecord
+      if (record && record.entries)
+        return (
+          `${record.label} records why this project's rules exist, and no instruction file names it. ` +
+          'Propose one line for CLAUDE.md that says: before adding, changing or removing a rule, read that file, and add a row for a new rule. Show me the diff before you save it.'
+        )
+      return (
+        'My instruction files (CLAUDE.md, AGENTS.md and the files under .claude/rules/) have no record of why each rule is there. ' +
+        'For each rule, use git log and git blame to find the commit that added it. Draft a table with one row for each rule: the rule in a few words, the date it was added, ' +
+        'the model in use then if the history says, what went wrong that led to it, what it was expected to fix, what happened after, and what would make it safe to delete. ' +
+        'Write "unknown" wherever the history does not say. Do not guess a reason. Show me the table, and where you would save it, before you write any file.'
+      )
+    }
     case 'hooks':
       return (
         'This project has no Claude Code hooks. Look at how it formats, lints and tests code. Propose at most two hooks for .claude/settings.json that run after an edit ' +
@@ -945,6 +1036,7 @@ export const LAYER_OF: Readonly<Record<string, Layer>> = {
   'run-limits': 'loop',
   'auto-memory-index': 'memory',
   'auto-memory-folder': 'memory',
+  'rule-record': 'memory',
   'allow-rules': 'permissions',
   'subagents-and-mcp': 'permissions',
   'deny-secrets': 'permissions',
@@ -1040,7 +1132,7 @@ export const LAYERS: ReadonlyArray<{ key: Layer; title: string; what: string; un
     key: 'memory',
     title: 'Memory',
     what: 'What carries over from one session to the next.',
-    unchecked: 'It does not look for handoff notes or a record of decisions.',
+    unchecked: 'It does not look for handoff notes. It finds a record of why rules exist by its file name, and does not judge what the record says.',
   },
   {
     key: 'permissions',

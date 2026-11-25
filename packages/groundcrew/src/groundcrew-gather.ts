@@ -5,14 +5,14 @@
  * so it can be bundled into another tool.
  *
  * What it reads: the settings files, the instruction files (line counts, and the commands they
- * restrict), the names of skills,
+ * restrict, and whether they name a record of why the rules exist), the names of skills,
  * subagents and commands, and the names of MCP servers. What it never reads: the contents of
  * a secrets file (it lists names such as "apps/api/.env" only) and session transcripts.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import os from 'os'
 import path from 'path'
-import { findRestrictedCommands, findUnattendedRuns, memoryFolder, packageOf, type McpPackage, type MemoryFile, type RestrictedCommand, type SettingsFile, type SetupFacts } from './groundcrew-core.js'
+import { findRestrictedCommands, findUnattendedRuns, looksLikeRuleRecord, memoryFolder, packageOf, recordEntries, type McpPackage, type RuleRecord, type MemoryFile, type RestrictedCommand, type SettingsFile, type SetupFacts } from './groundcrew-core.js'
 
 const SECRET_NAMES = /^(\.env(\..+)?|secrets?(\..+)?|credentials(\..+)?|.*\.pem|id_rsa)$/i
 const NOT_SECRET = /\.(example|sample|template)$/i
@@ -141,11 +141,14 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
   const label = (file: string) => (file.startsWith(project + path.sep) ? file.slice(project.length + 1) : tilde(file))
 
   const restricted: RestrictedCommand[] = []
+  /** The text of each project instruction file, to look for the name of a rule record in. */
+  const instructionTexts: Array<{ file: string; text: string }> = []
   const memoryFile = (file: string, instructions = true): MemoryFile | null => {
     if (!existsSync(file) || !statSync(file).isFile()) return null
     const text = readFileSync(file, 'utf-8')
     filesRead.push(label(file))
     if (instructions) restricted.push(...findRestrictedCommands(text, label(file)))
+    if (instructions && file.startsWith(project + path.sep)) instructionTexts.push({ file, text })
     return { label: label(file), lines: text.split('\n').length - (text.endsWith('\n') ? 1 : 0), bytes: Buffer.byteLength(text) }
   }
   const memory = [
@@ -159,7 +162,37 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
     .filter((file): file is MemoryFile => file !== null)
   // Rule files are instructions too. They are read for restricted commands and counted below.
   for (const dir of [path.join(project, '.claude', 'rules'), path.join(configDir(), 'rules')]) {
-    for (const file of markdownFiles(dir)) restricted.push(...findRestrictedCommands(readFileSync(file, 'utf-8'), label(file)))
+    for (const file of markdownFiles(dir)) {
+      const text = readFileSync(file, 'utf-8')
+      restricted.push(...findRestrictedCommands(text, label(file)))
+      if (file.startsWith(project + path.sep)) instructionTexts.push({ file, text })
+    }
+  }
+
+  // A record of why the rules exist: a file the instructions link to, or one with a telling
+  // name in a usual place. Its entries are counted and its text is not kept.
+  const recordFiles: string[] = []
+  for (const { file, text } of instructionTexts) {
+    for (const m of text.matchAll(/\]\(\s*([^)\s#]+\.md)(?:#[^)]*)?\s*\)/g)) {
+      if (!looksLikeRuleRecord(path.basename(m[1])) || /^[a-z]+:/i.test(m[1])) continue
+      for (const base of [path.dirname(file), project]) {
+        const target = path.resolve(base, m[1])
+        if (target.startsWith(project + path.sep) && existsSync(target)) recordFiles.push(target)
+      }
+    }
+  }
+  for (const dir of ['', 'docs', 'docs/ai', 'doc', '.claude']) {
+    recordFiles.push(...listFiles(path.join(project, dir), looksLikeRuleRecord).map((n) => path.join(project, dir, n)))
+  }
+  let ruleRecord: RuleRecord | null = null
+  for (const file of recordFiles) {
+    const text = readText(file)
+    if (text === null) continue
+    const name = path.basename(file)
+    const from = instructionTexts.find((t) => t.file !== file && t.text.includes(name))
+    ruleRecord = { label: label(file), entries: recordEntries(text), linkedFrom: from ? label(from.file) : null }
+    filesRead.push(`${label(file)} (its entries are counted)`)
+    break
   }
 
   const settingsFile = (scope: SettingsFile['scope'], file: string): SettingsFile | null => {
@@ -257,6 +290,7 @@ export function gather(project: string): { facts: SetupFacts; filesRead: string[
       mcpServers: { project: Object.keys(projectMcp?.mcpServers || {}).length, user: userServers },
       secretFiles: findSecretFiles(project, '', 0).sort(),
       restricted,
+      ruleRecord,
       mcpPackages,
       unattendedRuns,
     },

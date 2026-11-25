@@ -545,3 +545,49 @@ describe('comparing with an earlier report (--since)', () => {
     expect(moved).toContain('Title of a')
   })
 })
+
+describe('a record of why each rule exists', () => {
+  const big = [{ label: 'CLAUDE.md', lines: 170, bytes: 9000 }]
+  const find = (f: SetupFacts) => runChecks(f).find((c) => c.id === 'rule-record')
+  it('knows a record by its file name', async () => {
+    const { looksLikeRuleRecord } = await import('../src/groundcrew-core.js')
+    expect(['RULE_LEDGER.md', 'ledger.md', 'decision-log.md', 'decision_records.md', 'rules-history.md', 'rule-log.md'].map(looksLikeRuleRecord)).toEqual([true, true, true, true, true, true])
+    expect(['CHANGELOG.md', 'README.md', 'knowledge.md', 'catalog.md', 'ledger.txt'].map(looksLikeRuleRecord)).toEqual([false, false, false, false, false])
+  })
+  it('counts table rows, or sections, or list items', async () => {
+    const { recordEntries } = await import('../src/groundcrew-core.js')
+    expect(recordEntries('# T\n\n| Rule | Why |\n|---|---|\n| a | b |\n| c | d |\n\n## Retired\n\n| Rule | Why |\n| :-- | --: |\n| e | f |\n')).toBe(3)
+    expect(recordEntries('# T\n\n## One\ntext\n\n### Two\n- x\n')).toBe(2)
+    expect(recordEntries('# T\n\n- one\n- two\n1. three\n')).toBe(3)
+    expect(recordEntries('# Only a title\n')).toBe(0)
+  })
+  it('passes when a record with entries is named by the instructions', () => {
+    const c = find(facts({ memory: big, ruleRecord: { label: 'docs/ai/RULE_LEDGER.md', entries: 28, linkedFrom: 'CLAUDE.md' } }))!
+    expect([c.status, c.layer, c.fix, c.prompt]).toEqual(['pass', 'memory', '', ''])
+    expect(c.detail).toBe('docs/ai/RULE_LEDGER.md holds 28 entries, and CLAUDE.md names it.')
+  })
+  it('warns when no instruction file names the record', () => {
+    const c = find(facts({ memory: big, ruleRecord: { label: 'docs/decision-log.md', entries: 1, linkedFrom: null } }))!
+    expect(c.status).toBe('warn')
+    expect(c.detail).toContain('holds 1 entry, and no instruction file names it')
+    expect(c.prompt).toContain('docs/decision-log.md')
+  })
+  it('warns when long instructions have no record, and says whose advice it is', () => {
+    for (const ruleRecord of [null, { label: 'ledger.md', entries: 0, linkedFrom: 'CLAUDE.md' }]) {
+      const c = find(facts({ memory: big, ruleRecord }))!
+      expect(c.status).toBe('warn')
+      expect(c.fix).toContain("Our suggestion, not the docs'")
+      expect(c.fix).toContain('not a person editing CLAUDE.md')
+      expect(c.source).toBe('https://arxiv.org/abs/2611.18856')
+      expect(c.prompt).toContain('Do not guess a reason')
+    }
+  })
+  it('is only a fact for short instructions, and does not count the instructions in the home folder', () => {
+    const c = find(facts({ memory: [{ label: 'CLAUDE.md', lines: 20, bytes: 900 }, { label: '~/.claude/CLAUDE.md', lines: 300, bytes: 9000 }], ruleRecord: null }))!
+    expect([c.status, c.prompt]).toEqual(['info', ''])
+    expect(c.detail).toContain('hold 20 lines')
+  })
+  it('says nothing for a caller that did not look', () => {
+    expect(find(facts({ memory: big }))).toBeUndefined()
+  })
+})
